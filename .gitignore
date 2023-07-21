@@ -1,0 +1,8 @@
+src/debug-run.sh
+src/engine-interface.txt
+src/nohup.out
+src/print_log.sh
+src/logfolder
+src/rust_in_pieces
+target/
+src/.vscode/launch.json
