@@ -58,7 +58,7 @@ impl Pgn {
     }
 
     pub fn save(&self) {
-        let content = format!("\n\n\n[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n\n{}",
+        let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{}\n\n",
         self.event,
         self.site,
         self.date,
@@ -69,7 +69,7 @@ impl Pgn {
         self.time_control,
         self.time,
         self.moves,
-    );
+        );
 
         match OpenOptions::new()
             .write(true)

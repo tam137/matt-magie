@@ -1,5 +1,5 @@
 
-
+use std::collections::HashMap;
 use crate::Turn;
 
 static TARGETS_FOR_SHORT_WHITE: [i32; 3] = [95, 96, 97];
@@ -15,6 +15,7 @@ pub struct Board {
     state: GameState,
     moves: String,
     turns: Vec<Turn>,
+    position_map: HashMap<String, i32>,
 }
 
 #[derive(PartialEq)]
@@ -88,6 +89,7 @@ impl Board {
             state: GameState::Normal,
             moves: String::new(),
             turns: Vec::with_capacity(200),
+            position_map: HashMap::new(),
         }
     }
 
@@ -159,6 +161,7 @@ impl Board {
                 self.state = GameState::Draw;
             }
         }
+        self.state = if self.position_map.values().any(|&value| value > 2) { GameState::Draw } else { self.state };
         turn_list
     }
 
@@ -180,8 +183,16 @@ impl Board {
         self.field[turn.from] = 0;
         self.pty += 1;
         self.moves += " ";
-        self.moves += &turn.to_algebraic().clone();
+        self.moves += &turn.to_algebraic(false).clone();
         self.turns.push(turn.clone());
+    }
+
+
+    pub fn do_turn_and_return_long_algebraic(&mut self, turn: &Turn) -> String {
+        let figure_sign = self.get_piece_for_field(turn.from);
+        let long_algebraic = format!("{}{}", figure_sign, turn.to_algebraic(true));
+        self.do_turn(turn);
+        long_algebraic
     }
 
 
@@ -247,7 +258,7 @@ impl Board {
 
 
     pub(crate) fn validate_turn(&self, turn: &Turn) {
-        if self.field[turn.from] < 10 { panic!("turn.from points not to a piece ({} {})", self.moves, turn.to_algebraic()) };
+        if self.field[turn.from] < 10 { panic!("turn.from points not to a piece ({} {})", self.moves, turn.to_algebraic(true)) };
         if self.field[turn.to] != 0 && turn.capture == 0 { panic!("turn.to points not to an empty field") };
         if turn.capture != -1 && (self.field[turn.to] == 0 && turn.capture != 0) { panic!("turn.to is expected to capture") };
         if self.field[turn.to] < 0 { panic!("turn.to points not no a valid field") };
@@ -342,6 +353,11 @@ impl Board {
     }
 
 
+    pub fn add_position_for_3_move_repetition_check(&mut self, fen: String) {
+        *self.position_map.entry(fen).or_insert(0) += 1;
+    }
+
+
     pub fn get_complexity(&self) -> i32 {
         ((self.generate_moves_list(true).len() / 2) + (self.generate_moves_list(false).len() / 2)) as i32 / 10
     }
@@ -349,6 +365,18 @@ impl Board {
 
     pub fn get_pieces_on_field(&self) -> i32 {
         self.field.iter().filter(|&x| *x > 1).count() as i32
+    }
+
+    pub fn get_piece_for_field(&self, field_nr: usize) -> &str {
+        let figure = self.get_field()[field_nr] % 10;
+        match figure {
+            1 => "R",
+            2 => "N",
+            3 => "B",
+            4 => "Q",
+            5 => "K",
+            _ => "", // Pawn
+        }
     }
 
 

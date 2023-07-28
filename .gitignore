@@ -6,3 +6,4 @@ src/logfolder
 src/rust_in_pieces
 target/
 src/.vscode/launch.json
+.vscode

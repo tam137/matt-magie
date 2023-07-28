@@ -93,6 +93,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     let mut board = Board::new();
+    let mut all_moves_long_algebraic = String::new();
     let mut game_status = 0;
 
     // loop received engine inputs from all engines
@@ -104,7 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             game_status += 1;
         }
 
-        let result = rx.recv();
+        let result = rx.recv();        
         
         match result {
             Ok(value) => {
@@ -129,7 +130,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let mut turn: Turn = Turn::generate_turns(best_move)[0].clone();
 
                         Turn::enrich_promotion_move(&mut turn, &board, white);
-                        board.do_turn(&turn);
+                        let long_agrebraic = board.do_turn_and_return_long_algebraic(&turn);
+                        board.add_position_for_3_move_repetition_check(board.get_fen());
+
+
+                        let move_number = if board.get_pty() % 2 == 1 { format!("{}. ", board.get_pty() / 2 + 1) } else { format!("") };
+                        all_moves_long_algebraic = format!("{} {}{}", all_moves_long_algebraic, move_number, long_agrebraic);
                         let _possible_turns = board.get_turn_list(!white, false); // sets GameStatus
                         
                         if _possible_turns.len() == 0 {
@@ -138,16 +144,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         let all_moves_str = board.get_all_made_turns()
                             .iter()
-                            .map(|turn| turn.to_algebraic())
+                            .map(|turn| turn.to_algebraic(false))
                             .collect::<Vec<String>>()
                             .join(" ");
+
                 
                         match board.get_state() { // if game has finished
                             &GameState::WhiteWin | &GameState::BlackWin | &GameState::Draw => {
                                 logger.log(format!("{:?} {}", board.get_state(), board.get_fen()));
                                 send(current_engine_process, "stop", &logger);
                                 send(other_engine_process, "stop", &logger);
-                                pgn.set_moves(all_moves_str);
+                                pgn.set_moves(all_moves_long_algebraic);
+                                pgn.set_ply_count(format!("{}", board.get_pty()));
+
+                                let result = if GameState::WhiteWin == *board.get_state() { "1-0" }
+                                else if GameState::BlackWin == *board.get_state() { "0-1" }
+                                else { "1/2-1/2" };
+                                pgn.set_result(String::from(result));
                                 pgn.save();
                                 break;
                             }
