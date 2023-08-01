@@ -13,8 +13,16 @@ use std::env;
 use std::error::Error;
 use log::Log;
 use std::process::Child;
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use chrono::{Local, Datelike, Timelike};
+
+#[derive(PartialEq)]
+enum TimeControl {
+    BlackStop,
+    BlackStart,
+    WhiteStop,
+    WhiteStart,
+}
 
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -29,7 +37,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let site = args.get(6).unwrap();
     let round = args.get(7).unwrap();
     let time_per_game = args.get(8).unwrap();
-    let time_per_move = args.get(9).unwrap();
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -43,18 +50,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         "Engine_1".to_string(),
         "Engine_2".to_string(),
         time,
-        "1/0".to_string(),
+        format!("{}/0", time_per_game.to_string().parse::<i32>().unwrap() / 1000),
         pgn_path.to_string(),
     );
 
 
-
-
-    let logger = Log::new(logfile);
-    logger.log("MattMagie Schachmanager beta started".to_string());
+    let mut logger = Log::new(logfile);
+    logger.log("MattMagie Schachmanager (beta) started".to_string());
 
     let (tx0, rx) = mpsc::channel();
     let tx1 = mpsc::Sender::clone(&tx0);
+    let (tx_clock, rx_clock) = mpsc::channel::<TimeControl>();
+    let (tx_time, rx_time) = mpsc::channel::<(i32, i32)>();
 
     let mut engine_process_0: Child = Command::new(engine_0)
         .stdin(Stdio::piped())
@@ -92,20 +99,98 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     })?;
 
+
+
+    let mut time_white: i32 = time_per_game.to_string().parse::<i32>().unwrap();
+    let mut time_black: i32 = time_white.clone();
+
+    tx_time.send((time_white, time_black)).unwrap();
+
+    let _handle_1 = thread::Builder::new().name("Time_Control".to_string()).spawn(move || {
+        let mut timer_white: Option<Instant> = None;
+        let mut timer_black: Option<Instant> = None;
+    
+        loop {
+            match rx_clock.recv() {
+                Ok(message) => {
+                    match message {
+                        TimeControl::WhiteStart => {
+                            timer_white = Some(Instant::now());
+                        },
+                        TimeControl::WhiteStop => {
+                            if let Some(timer) = timer_white {
+                                let elapsed = timer.elapsed();
+                                time_white -= elapsed.as_millis() as i32;
+                                timer_white = None;
+                            }
+                        },
+                        TimeControl::BlackStart => {
+                            timer_black = Some(Instant::now());
+                        },
+                        TimeControl::BlackStop => {
+                            if let Some(timer) = timer_black {
+                                let elapsed = timer.elapsed();
+                                time_black -= elapsed.as_millis() as i32;
+                                timer_black = None;
+                            }
+                        },
+                    }
+                },
+                Err(_) => {
+                    // other side has close the channel
+                }
+            }
+
+            if let Err(_e) = tx_time.send((time_white, time_black)) {
+                // other side has close the channel
+            }
+        }
+    })?;
+
+
+
     let mut board = Board::new();
     let mut all_moves_long_algebraic = String::new();
     let mut game_status = 0;
 
-    // loop received engine inputs from all engines
-    loop {
+    let mut remaining_time_white = time_white;
+    let mut remaining_time_black = time_black;
+    
+    // mainthread loop received engine inputs from all engines
+    loop {        
+    
+        match rx_time.try_recv() {
+            Ok((new_remaining_time_white, new_remaining_time_black)) => {
+                remaining_time_white = new_remaining_time_white;
+                remaining_time_black = new_remaining_time_black;
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                // No need to update remaining_time_white or remaining_time_black
+            },
+            Err(mpsc::TryRecvError::Disconnected) => {
+                panic!("sender has diconnected");
+            }
+        }
         
+        if remaining_time_white <= 0 {
+            board.set_state(GameState::BlackWinByTime);
+        } else if remaining_time_black <= 0{
+            board.set_state(GameState::WhiteWinByTime);
+        }
+
         if game_status == 2 {
             // all Engines ready for new game
-            send(&mut engine_process_0, "go wtime 1000 btime 1000", &logger);
+            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logger);
+            tx_clock.send(TimeControl::WhiteStart).unwrap();
             game_status += 1;
         }
 
-        let result = rx.recv();        
+        if check_game_over(&mut board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic) {
+            logger.log(format!("white_time: {} black_time: {}", remaining_time_white, remaining_time_black));
+            break;
+        } 
+
+        let result = rx.recv();
         
         match result {
             Ok(value) => {
@@ -149,35 +234,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                             .join(" ");
 
                 
-                        match board.get_state() { // if game has finished
-                            &GameState::WhiteWin | &GameState::BlackWin | &GameState::Draw => {
-                                logger.log(format!("{:?} {}", board.get_state(), board.get_fen()));
-                                send(current_engine_process, "stop", &logger);
-                                send(other_engine_process, "stop", &logger);
-                                pgn.set_moves(all_moves_long_algebraic);
-                                pgn.set_ply_count(format!("{}", board.get_pty()));
-
-                                let result = if GameState::WhiteWin == *board.get_state() { "1-0" }
-                                else if GameState::BlackWin == *board.get_state() { "0-1" }
-                                else { "1/2-1/2" };
-                                pgn.set_result(String::from(result));
-                                pgn.save();
+                            if check_game_over(&mut board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic) {
                                 break;
-                            }
-                            _ => {}
-                        }                
+                            }              
 
                         let all_moves = format!("position startpos moves {}", all_moves_str);
                         send(other_engine_process, &all_moves, &logger);
-                        send(other_engine_process, "go wtime 1000 btime 1000", &logger);
+                        send(other_engine_process, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logger);
+                        if white {
+                            tx_clock.send(TimeControl::BlackStop).unwrap();
+                            tx_clock.send(TimeControl::WhiteStart).unwrap();
+                            logger.log(String::from("White time running"));
+                        } else {
+                            tx_clock.send(TimeControl::WhiteStop).unwrap();
+                            tx_clock.send(TimeControl::BlackStart).unwrap();
+                            logger.log(String::from("Black time running"));
+                        }
                     }
                     _ => {}
                 }
             },
             Err(_error) => {
-                // received nothing ignore
                 logger.log(board.get_fen());
-                logger.log(_error.to_string());                
+                logger.log(_error.to_string());
                 thread::sleep(Duration::from_secs(1));
             }
         }
@@ -186,6 +265,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+
+fn check_game_over(board: &mut Board, tx_clock: &mpsc::Sender<TimeControl>, logger: &mut Log, pgn: &mut Pgn, all_moves_long_algebraic: &str) -> bool {
+    match board.get_state() {
+        &GameState::WhiteWin | &GameState::BlackWin | &GameState::WhiteWinByTime | &GameState::BlackWinByTime | &GameState::Draw => {
+            tx_clock.send(TimeControl::WhiteStop).unwrap();
+            tx_clock.send(TimeControl::BlackStop).unwrap();
+            logger.log(format!("{:?} {}", board.get_state(), board.get_fen()));
+            pgn.set_moves(all_moves_long_algebraic.to_string());
+            pgn.set_ply_count(format!("{}", board.get_pty()));
+
+            let result = if GameState::WhiteWin == *board.get_state() { "1-0" }
+            else if GameState::BlackWin == *board.get_state() { "0-1" }
+            else { "1/2-1/2" };
+            pgn.set_result(String::from(result));
+            pgn.save();
+            true
+        }
+        _ => false
+    }
+}
 
 
 fn send(engine: &mut Child, command: &str, logger: &Log) {

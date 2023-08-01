@@ -27,6 +27,8 @@ pub enum GameState {
     WhiteWin,
     BlackWin,
     Normal,
+    WhiteWinByTime,
+    BlackWinByTime,
 }
 
 impl PartialEq for Board {
@@ -99,6 +101,10 @@ impl Board {
 
     pub fn get_state(&self) -> &GameState {
         &self.state
+    }
+
+    pub fn set_state(&mut self, state: GameState) {
+        self.state = state;
     }
 
     pub fn get_field(&self) -> &[i32; 120] {
