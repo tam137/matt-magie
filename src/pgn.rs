@@ -57,6 +57,14 @@ impl Pgn {
         self.moves = moves;
     }
 
+    pub fn set_white_name(&mut self, name: &str) {
+        self.white = String::from(name);
+    }
+
+    pub fn set_black_name(&mut self, name: &str) {
+        self.black = String::from(name);
+    }
+
     pub fn save(&self) {
         let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{}\n\n",
         self.event,

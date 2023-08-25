@@ -38,12 +38,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let site = args.get(6).unwrap();
     let round = args.get(7).unwrap();
     let time_per_game = args.get(8).unwrap();
+    let log_on: bool = if args.get(9).unwrap() == ("log_on") { true } else { false };
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
     let time = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second());
 
-    let mut pgn = Pgn::new(
+    let mut pgn: Pgn = Pgn::new(
         event.clone(),
         site.clone(),
         date,
@@ -58,6 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut logger = Log::new(logfile);
     logger.log("MattMagie Schachmanager (beta) started".to_string());
+
 
     let (tx0, rx) = mpsc::channel();
     let tx1 = mpsc::Sender::clone(&tx0);
@@ -198,7 +200,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     (id_engine_1, &value[2..], &mut engine_process_1, &mut engine_process_0, false)
                 };
         
-                logger.log(format!("{}\t->  mat\t\t{}", id_engine, value));
+                if msg.starts_with("log") && log_on {
+                    logger.log(format!("{}\t->logger\t{}", id_engine, value));
+                } else {
+                    logger.log(format!("{}\t->  mat\t\t{}", id_engine, value));
+                }
+                
         
                 match msg {
                     "uciok" => {
@@ -207,6 +214,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     "readyok" => {
                         send(current_engine_process, "ucinewgame", &logger);
                         game_status += 1;
+                    }
+                    _ if msg.starts_with("id name") => {
+                        if white {
+                            pgn.set_white_name(&msg[8..]);
+                        } else {
+                            pgn.set_black_name(&msg[8..]);
+                        }    
                     }
                     _ if msg.starts_with("bestmove") => {
                         let best_move: &str = &msg[9..13];
@@ -270,9 +284,12 @@ fn check_game_over(board: &mut Board, tx_clock: &mpsc::Sender<TimeControl>, logg
             pgn.set_moves(all_moves_long_algebraic.to_string());
             pgn.set_ply_count(format!("{}", board.get_pty()));
 
-            let result = if GameState::WhiteWin == *board.get_state() { "1-0" }
-            else if GameState::BlackWin == *board.get_state() { "0-1" }
-            else { "1/2-1/2" };
+            let state = *board.get_state();
+            let result = match state {
+                GameState::WhiteWin | GameState::WhiteWinByTime => "1-0",
+                GameState::BlackWin | GameState::BlackWinByTime => "0-1",
+                _ => "1/2-1/2",
+            };
             pgn.set_result(String::from(result));
             pgn.save();
             true
