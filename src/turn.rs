@@ -20,21 +20,26 @@ impl Turn {
     pub fn generate_turns(move_row: &str) -> Vec<Turn> {
         let mut turn_list = Vec::new();
         let algebraic_move_list: Vec<&str> = move_row.split_whitespace().collect();
-    
+
         for algebraic_move in algebraic_move_list {
             let from = board::get_index_from_notation(&algebraic_move[0..2]).unwrap();
             let to = board::get_index_from_notation(&algebraic_move[2..4]).unwrap();
-    
+            let promotion = if algebraic_move.len() == 5 {
+                algebraic_move.chars().nth(4) == Some('q')
+            } else {
+                false
+            };
+
             turn_list.push(Turn {
                 from,
                 to,
                 capture: -1, // symbol for not do a validation check
                 post_villain:  Vec::new(),
                 post_my: Vec::new(),
-                promotion: false,
+                promotion,
             });
         }
-    
+
         turn_list
     }
 
