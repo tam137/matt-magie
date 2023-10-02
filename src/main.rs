@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 
     let mut logger = Log::new(logfile);
-    logger.log("MattMagie Schachmanager (beta) started".to_string());
+    logger.log("MattMagie Schachmanager 1.0 started".to_string());
 
 
     let (tx0, rx) = mpsc::channel();
@@ -302,7 +302,10 @@ fn check_game_over(board: &mut Board, tx_clock: &mpsc::Sender<TimeControl>, logg
 fn send(engine: &mut Child, command: &str, logger: &Log) {
     let command_with_newline = format!("{}\n", command);
     let stdin = engine.stdin.as_mut().expect("Failed");
-    stdin.write_all(&command_with_newline.as_bytes()).expect("Failed to write to stdin");
+    stdin.write_all(&command_with_newline.as_bytes())
+        .unwrap_or_else(|err| {
+            eprintln!("Failed to write to stdin Command ->: {} - {}", command, err);
+        });
     stdin.flush().unwrap();
     logger.log(format!("mat\t->  {}\t{}", engine.id(), command));
 }
