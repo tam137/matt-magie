@@ -1,10 +1,14 @@
-mod board;
-mod turn;
 mod log;
 mod pgn;
+mod notation_util;
+mod model;
+mod service;
+mod fen_service;
+mod move_gen_service;
+
+use notation_util::NotationUtil;
 use pgn::Pgn;
-use turn::Turn;
-use board::{Board, GameState};
+use service::Service;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -16,6 +20,9 @@ use log::Log;
 use std::process::Child;
 use std::time::Duration;
 use chrono::{Local, Datelike, Timelike};
+use model::UciGame;
+use model::GameStatus;
+use model::Board;
 
 
 #[derive(PartialEq)]
@@ -58,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 
     let mut logger = Log::new(logfile);
-    logger.log("MattMagie Schachmanager 1.0 started".to_string());
+    logger.log("Matt-Magie 1.1.0-candidate started".to_string());
 
 
     let (tx0, rx) = mpsc::channel();
@@ -146,8 +153,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
 
+    let service = Service::new();
 
-    let mut board = Board::new();
+    let mut game = UciGame::new(service.fen.set_init_board());
     let mut all_moves_long_algebraic = String::new();
     let mut game_status = 0;
 
@@ -161,9 +169,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         remaining_time_black = *time_black.lock().unwrap();
     
         if remaining_time_white <= 0 {
-            board.set_state(GameState::BlackWinByTime);
+            game.board.game_status = GameStatus::BlackWinByTime;
         } else if remaining_time_black <= 0{
-            board.set_state(GameState::WhiteWinByTime);
+            game.board.game_status = GameStatus::WhiteWinByTime;
         }
 
         if game_status == 2 {
@@ -173,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             game_status += 1;
         }
 
-        if check_game_over(&mut board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic) {
+        if check_game_over(&mut game.board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic, &service) {
             logger.log(format!("white_time: {} black_time: {}", remaining_time_white, remaining_time_black));
             break;
         } 
@@ -223,32 +231,41 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }    
                     }
                     _ if msg.starts_with("bestmove") => {
-                        let best_move: &str = &msg[9..13];
-                        let mut turn: Turn = Turn::generate_turns(best_move)[0].clone();
-
-                        Turn::enrich_promotion_move(&mut turn, &board, white);
-                        let long_agrebraic = board.do_turn_and_return_long_algebraic(&turn);
-                        board.add_position_for_3_move_repetition_check(board.get_fen());
-
-
-                        let move_number = if board.get_pty() % 2 == 1 { format!("{}. ", board.get_pty() / 2 + 1) } else { format!("") };
-                        all_moves_long_algebraic = format!("{} {}{}", all_moves_long_algebraic, move_number, long_agrebraic);
-                        let _possible_turns = board.get_turn_list(!white, false); // sets GameStatus
                         
-                        if _possible_turns.len() == 0 {
+                        
+                        let best_move = if msg.len() > 13 {
+                            &msg[9..14]
+                        } else {
+                            &msg[9..13]
+                        };
+                        
+
+                        //let best_move = &msg[9..13];
+
+                        game.do_move(best_move);
+
+                        let turn = NotationUtil::get_turn_from_notation(best_move);
+
+                        let long_algebraic = if turn.promotion != 0 {
+                            format!("{}{}", &msg[9..13], "=Q")
+                        } else {
+                            format!("{}", NotationUtil::get_long_algebraic(&msg[9..13], &game.board))
+                        };
+                        
+
+                        let move_number = if game.pty % 2 == 1 { format!("{}. ", game.pty / 2 + 1) } else { format!("") };
+                        all_moves_long_algebraic = format!("{} {}{}", all_moves_long_algebraic, move_number, long_algebraic);
+                        let possible_turns = service.move_gen.generate_valid_moves_list(&mut game.board);
+                        
+                        if possible_turns.is_empty() {
                             logger.log("found no moves".to_string());
                         }
 
-                        let all_moves_str = board.get_all_made_turns()
-                            .iter()
-                            .map(|turn| turn.to_algebraic(false))
-                            .collect::<Vec<String>>()
-                            .join(" ");
-
+                        let all_moves_str = game.made_moves_str.as_str();
                 
-                            if check_game_over(&mut board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic) {
-                                break;
-                            }              
+                        if check_game_over(&mut game.board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic, &service) {
+                            break;
+                        }              
 
                         let all_moves = format!("position startpos moves {}", all_moves_str);
                         send(other_engine_process, &all_moves, &logger);
@@ -263,7 +280,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             },
             Err(_error) => {
-                logger.log(board.get_fen());
+                logger.log(service.fen.get_fen(&game.board));
                 logger.log(_error.to_string());
                 thread::sleep(Duration::from_secs(1));
             }
@@ -276,18 +293,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 
-fn check_game_over(board: &mut Board, tx_clock: &mpsc::Sender<TimeControl>, logger: &mut Log, pgn: &mut Pgn, all_moves_long_algebraic: &str) -> bool {
-    match board.get_state() {
-        &GameState::WhiteWin | &GameState::BlackWin | &GameState::WhiteWinByTime | &GameState::BlackWinByTime | &GameState::Draw => {
-            tx_clock.send(TimeControl::AllStop).unwrap();
-            logger.log(format!("{:?} {}", board.get_state(), board.get_fen()));
-            pgn.set_moves(all_moves_long_algebraic.to_string());
-            pgn.set_ply_count(format!("{}", board.get_pty()));
+fn check_game_over(board: &mut Board,
+    tx_clock: &mpsc::Sender<TimeControl>, logger: &mut Log, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
 
-            let state = *board.get_state();
+    match board.game_status {
+        GameStatus::WhiteWin | GameStatus::BlackWin | GameStatus::WhiteWinByTime | GameStatus::BlackWinByTime | GameStatus::Draw => {
+            tx_clock.send(TimeControl::AllStop).unwrap();
+            logger.log(format!("{:?} {}", board.game_status, service.fen.get_fen(&board)));
+            pgn.set_moves(all_moves_long_algebraic.to_string());
+            pgn.set_ply_count(format!("{}", board.move_count));
+
+            let state = board.game_status.clone();
             let result = match state {
-                GameState::WhiteWin | GameState::WhiteWinByTime => "1-0",
-                GameState::BlackWin | GameState::BlackWinByTime => "0-1",
+                GameStatus::WhiteWin | GameStatus::WhiteWinByTime => "1-0",
+                GameStatus::BlackWin | GameStatus::BlackWinByTime => "0-1",
                 _ => "1/2-1/2",
             };
             pgn.set_result(String::from(result));
