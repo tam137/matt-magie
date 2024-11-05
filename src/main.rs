@@ -5,6 +5,7 @@ mod model;
 mod service;
 mod fen_service;
 mod move_gen_service;
+mod zobrist;
 
 use notation_util::NotationUtil;
 use pgn::Pgn;
@@ -239,9 +240,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             &msg[9..13]
                         };
                         
-
-                        //let best_move = &msg[9..13];
-
                         game.do_move(best_move);
 
                         let turn = NotationUtil::get_turn_from_notation(best_move);
@@ -296,26 +294,27 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn check_game_over(board: &mut Board,
     tx_clock: &mpsc::Sender<TimeControl>, logger: &mut Log, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
 
-    match board.game_status {
-        GameStatus::WhiteWin | GameStatus::BlackWin | GameStatus::WhiteWinByTime | GameStatus::BlackWinByTime | GameStatus::Draw => {
-            tx_clock.send(TimeControl::AllStop).unwrap();
-            logger.log(format!("{:?} {}", board.game_status, service.fen.get_fen(&board)));
-            pgn.set_moves(all_moves_long_algebraic.to_string());
-            pgn.set_ply_count(format!("{}", board.move_count));
+    if board.game_status != GameStatus::Normal {
+        logger.log("Game status != Normal".to_string());
+        tx_clock.send(TimeControl::AllStop).unwrap();
+        logger.log(format!("{:?} {}", board.game_status, service.fen.get_fen(&board)));
+        pgn.set_moves(all_moves_long_algebraic.to_string());
+        pgn.set_ply_count(format!("{}", board.move_count));
 
-            let state = board.game_status.clone();
-            let result = match state {
-                GameStatus::WhiteWin | GameStatus::WhiteWinByTime => "1-0",
-                GameStatus::BlackWin | GameStatus::BlackWinByTime => "0-1",
-                _ => "1/2-1/2",
-            };
-            pgn.set_result(String::from(result));
-            pgn.save();
-            true
-        }
-        _ => false
+        let state = board.game_status.clone();
+        let result = match state {
+            GameStatus::WhiteWin | GameStatus::WhiteWinByTime => "1-0",
+            GameStatus::BlackWin | GameStatus::BlackWinByTime => "0-1",
+            _ => "1/2-1/2",
+        };
+        pgn.set_result(String::from(result));
+        pgn.save();
+        true
+    } else {
+        false
     }
 }
+
 
 
 fn send(engine: &mut Child, command: &str, logger: &Log) {

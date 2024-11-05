@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::notation_util::NotationUtil;
+use crate::{notation_util::NotationUtil, zobrist::ZobristTable};
 
 
 #[derive(Debug, PartialEq, Clone)]
@@ -182,6 +182,7 @@ pub struct Board {
     pub move_count: i32,
     pub game_status: GameStatus,
     pub move_repetition_map: HashMap<u64, i32>,
+    pub zobrist: ZobristTable,
 }
 
 impl Board {
@@ -195,6 +196,7 @@ impl Board {
         field_for_en_passante: i32,
         white_to_move: bool,
         move_count: i32,
+        zobrist: ZobristTable,
     ) -> Self {
         Board {
             field,
@@ -207,6 +209,7 @@ impl Board {
             move_count,
             game_status: GameStatus::Normal,
             move_repetition_map: HashMap::new(),
+            zobrist: ZobristTable::new(),
         }
     }
 
@@ -406,15 +409,7 @@ impl Board {
 
     // Hash function for the board (used for 3-move repetition)
     pub fn hash(&self) -> u64 {
-        let mut hash = 17u64;
-        hash = hash.wrapping_mul(31).wrapping_add(self.field.iter().fold(0, |acc, &x| acc.wrapping_add(x as u64)));
-        hash = hash.wrapping_mul(31).wrapping_add(self.white_possible_to_castle_long as u64);
-        hash = hash.wrapping_mul(31).wrapping_add(self.white_possible_to_castle_short as u64);
-        hash = hash.wrapping_mul(31).wrapping_add(self.black_possible_to_castle_long as u64);
-        hash = hash.wrapping_mul(31).wrapping_add(self.black_possible_to_castle_short as u64);
-        hash = hash.wrapping_mul(31).wrapping_add(self.field_for_en_passante as u64);
-        hash = hash.wrapping_mul(31).wrapping_add(self.white_to_move as u64);
-        hash
+        self.zobrist.gen(&self)
     }
 }
 
