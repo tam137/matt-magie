@@ -17,13 +17,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::env;
 use std::error::Error;
-use log::Log;
 use std::process::Child;
-use std::time::Duration;
 use chrono::{Local, Datelike, Timelike};
 use model::UciGame;
 use model::GameStatus;
 use model::Board;
+
+use crate::log::log;
 
 
 #[derive(PartialEq)]
@@ -38,15 +38,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let args: Vec<String> = env::args().collect();
 
-    let engine_0 = args.get(1).unwrap();
-    let engine_1 = args.get(2).unwrap();
-    let logfile = args.get(3).unwrap();
-    let pgn_path = args.get(4).unwrap();
-    let event = args.get(5).unwrap();
-    let site = args.get(6).unwrap();
-    let round = args.get(7).unwrap();
-    let time_per_game = args.get(8).unwrap();
-    let log_on: bool = if args.get(9).unwrap() == ("log_on") { true } else { false };
+    let engine_0 = args.get(1).expect("MM engine_0 not defined");
+    let engine_1 = args.get(2).expect("MM engine_1 not defined");
+    let logfile = args.get(3).expect("MM logfile path not defined").to_string();
+    let pgn_path = args.get(4).expect("MM pgn file path not defined").to_string();
+    let event = args.get(5).expect("MM pgn event not defined").to_string();
+    let site = args.get(6).expect("MM pgn site not defined").to_string();
+    let round = args.get(7).expect("MM pgn round not defined").to_string();
+    let time_per_game = args.get(8).expect("MM pgn time per game not defined").to_string();
+    let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -60,13 +60,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         "Engine_1".to_string(),
         "Engine_2".to_string(),
         time,
-        format!("{}/0", time_per_game.to_string().parse::<i32>().unwrap() / 1000),
+        format!("{}/0", time_per_game.to_string().parse::<i32>().expect("MM can not parse time arg") / 1000),
         pgn_path.to_string(),
     );
 
 
-    let mut logger = Log::new(logfile);
-    logger.log("Matt-Magie 1.1.0-candidate started".to_string());
+    log("Matt-Magie 1.1.0-candidate started", &logfile);
 
 
     let (tx0, rx) = mpsc::channel();
@@ -78,10 +77,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    logger.log(format!("loaded eng0 {}: {} ", engine_process_0.id(), engine_0));
-    let engine_0_stdout = engine_process_0.stdout.take().ok_or("Failed to retrieve stdout")?;
+    log(&format!("loaded eng0 {}: {} ", engine_process_0.id(), engine_0), &logfile);
+    let engine_0_stdout = engine_process_0.stdout.take().ok_or("MM Failed to retrieve stdout")?;
     let id_engine_0: u32 = engine_process_0.id();
-    send(&mut engine_process_0, "uci", &logger);    
+    send(&mut engine_process_0, "uci", &logfile);    
 
 
     let mut engine_process_1: Child = Command::new(engine_1)
@@ -89,30 +88,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    logger.log(format!("loaded eng1 {}: {} ", engine_process_1.id(), engine_1));
-    let engine_1_stdout = engine_process_1.stdout.take().ok_or("Failed to retrieve stdout")?;
+    log(&format!("loaded eng1 {}: {} ", engine_process_1.id(), engine_1), &logfile);
+    let engine_1_stdout = engine_process_1.stdout.take().ok_or("MM Failed to retrieve stdout")?;
     let id_engine_1: u32 = engine_process_1.id();
-    send(&mut engine_process_1, "uci", &logger);
+    send(&mut engine_process_1, "uci", &logfile);
 
 
     let _handle_0 = thread::Builder::new().name("Thread 0".to_string()).spawn(move || {
         let reader_eng0 = BufReader::new(engine_0_stdout);
         for line in reader_eng0.lines() {
-            tx0.send("0_".to_string() + &line.unwrap()).unwrap();
+            tx0.send("0_".to_string() + &line.expect("MM read engine_0 std input failed")).expect("MM send engine_0 std input failed");
         }
     })?;
 
     let _handle_1 = thread::Builder::new().name("Thread 1".to_string()).spawn(move || {
         let reader_eng1 = BufReader::new(engine_1_stdout);
         for line in reader_eng1.lines() {
-            tx1.send("1_".to_string() + &line.unwrap()).unwrap();
+            tx1.send("1_".to_string() + &line.expect("MM read engine_1 std input failed")).expect("MM send engine_1 std input failed");
         }
     })?;
 
 
 
-    let time_white = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>().unwrap()));
-    let time_black = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>().unwrap()));
+    let time_white = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>()
+    .expect("MM failed to parse white time_per_game")));
+
+    let time_black = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>()
+    .expect("MM failed to parse black time_per_game")));
+
     let time_white_clone = Arc::clone(&time_white);
     let time_black_clone = Arc::clone(&time_black);
 
@@ -141,13 +144,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // do nothing proceed...
                 },
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    println!("Disconnected clock channel for TimeControl...");
+                    panic!("Disconnected clock channel for TimeControl...");
                 }
             }
             if to_move == TimeControl::WhiteToMove {
-                *time_white_clone.lock().unwrap() -= 10;
+                *time_white_clone.lock().expect("MM could not unlock time_white") -= 10;
             } else if to_move == TimeControl::BlackToMove {
-                *time_black_clone.lock().unwrap() -= 10;
+                *time_black_clone.lock().expect("MM could not unlock time_white") -= 10;
             }
             thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -166,8 +169,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // mainthread loop received engine inputs from all engines
     loop {
 
-        remaining_time_white = *time_white.lock().unwrap();
-        remaining_time_black = *time_black.lock().unwrap();
+        remaining_time_white = *time_white.lock().expect("MM could not unlock time_white (remaining_time)");
+        remaining_time_black = *time_black.lock().expect("MM could not unlock time_white (remaining_time)");
     
         if remaining_time_white <= 0 {
             game.board.game_status = GameStatus::BlackWinByTime;
@@ -177,13 +180,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if game_status == 2 {
             // all Engines ready for new game
-            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logger);
-            tx_clock.send(TimeControl::WhiteToMove).unwrap();
+            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
+            tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
             game_status += 1;
         }
 
-        if check_game_over(&mut game.board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic, &service) {
-            logger.log(format!("white_time: {} black_time: {}", remaining_time_white, remaining_time_black));
+        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
+            log(&format!("white_time: {} black_time: {}", remaining_time_white, remaining_time_black), &logfile);
             break;
         } 
 
@@ -196,6 +199,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             },
             Err(mpsc::TryRecvError::Disconnected) => {
+                log("disconnected from command queue", &logfile);
                 break;
             }
         };     
@@ -210,18 +214,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 };
         
                 if msg.starts_with("log") && log_on {
-                    logger.log(format!("{}\t->logger\t{}", id_engine, value));
+                    log(&format!("{}\t->logger\t{}", id_engine, value), &logfile);
                 } else {
-                    logger.log(format!("{}\t->  mat\t\t{}", id_engine, value));
+                    log(&format!("{}\t->  mat\t\t{}", id_engine, value), &logfile);
                 }
                 
         
                 match msg {
                     "uciok" => {
-                        send(current_engine_process, "isready", &logger);
+                        send(current_engine_process, "isready", &logfile);
                     }
                     "readyok" => {
-                        send(current_engine_process, "ucinewgame", &logger);
+                        send(current_engine_process, "ucinewgame", &logfile);
                         game_status += 1;
                     }
                     _ if msg.starts_with("id name") => {
@@ -256,48 +260,46 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let possible_turns = service.move_gen.generate_valid_moves_list(&mut game.board);
                         
                         if possible_turns.is_empty() {
-                            logger.log("found no moves".to_string());
+                            log("found no moves", &logfile);
                         }
 
                         let all_moves_str = game.made_moves_str.as_str();
                 
-                        if check_game_over(&mut game.board, &tx_clock, &mut logger, &mut pgn, &all_moves_long_algebraic, &service) {
+                        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
                             break;
                         }              
 
                         let all_moves = format!("position startpos moves {}", all_moves_str);
-                        send(other_engine_process, &all_moves, &logger);
-                        send(other_engine_process, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logger);
+                        send(other_engine_process, &all_moves, &logfile);
+                        send(other_engine_process, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
                         if !white {
-                            tx_clock.send(TimeControl::WhiteToMove).unwrap();
+                            tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send white time command");
                         } else {
-                            tx_clock.send(TimeControl::BlackToMove).unwrap();
+                            tx_clock.send(TimeControl::BlackToMove).expect("MM could not send black time command");
                         }
                     }
                     _ => {}
                 }
             },
             Err(_error) => {
-                logger.log(service.fen.get_fen(&game.board));
-                logger.log(_error.to_string());
-                thread::sleep(Duration::from_secs(1));
+                panic!("cannot be here, message is OK");
             }
         }
     }
-    send(&mut engine_process_0, "quit", &logger);
-    send(&mut engine_process_1, "quit", &logger);
-    logger.log("finished Matt Magie".to_string());
+    send(&mut engine_process_0, "quit", &logfile);
+    send(&mut engine_process_1, "quit", &logfile);
+    log("finished Matt Magie", &logfile);
     std::process::exit(0);
 }
 
 
 fn check_game_over(board: &mut Board,
-    tx_clock: &mpsc::Sender<TimeControl>, logger: &mut Log, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
+    tx_clock: &mpsc::Sender<TimeControl>, logfile: &str, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
 
     if board.game_status != GameStatus::Normal {
-        logger.log("Game status != Normal".to_string());
+        log("Game status != Normal", logfile);
         tx_clock.send(TimeControl::AllStop).unwrap();
-        logger.log(format!("{:?} {}", board.game_status, service.fen.get_fen(&board)));
+        log(&format!("{:?} {}", board.game_status, service.fen.get_fen(&board)), logfile);
         pgn.set_moves(all_moves_long_algebraic.to_string());
         pgn.set_ply_count(format!("{}", board.move_count));
 
@@ -317,7 +319,7 @@ fn check_game_over(board: &mut Board,
 
 
 
-fn send(engine: &mut Child, command: &str, logger: &Log) {
+fn send(engine: &mut Child, command: &str, logfile: &str) {
     let command_with_newline = format!("{}\n", command);
     let stdin = engine.stdin.as_mut().expect("Failed");
     stdin.write_all(&command_with_newline.as_bytes())
@@ -325,5 +327,5 @@ fn send(engine: &mut Child, command: &str, logger: &Log) {
             eprintln!("Failed to write to stdin Command ->: {} - {}", command, err);
         });
     stdin.flush().unwrap();
-    logger.log(format!("mat\t->  {}\t{}", engine.id(), command));
+    log(&format!("mat\t->  {}\t{}", engine.id(), command), logfile);
 }
