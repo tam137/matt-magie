@@ -10,14 +10,25 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
-        "mewel_V0.3.3.sh"
         "suprah-arm"
+        "mewel_V0.3.3.sh"        
+        "mewel_V0.3.sh"
+        "mewel_V0.1.sh"
     )
 
-    # Tournament-specific variables
-    event="Tournament_03"
+    # Check if all engines exist
+    for engine in "${engines[@]}"; do
+        if [[ ! -f "$engine_dir/$engine" ]]; then
+            echo "Error: Engine '$engine' not found in directory '$engine_dir'."
+            exit 1
+        fi
+    done
+
+    # Override Tournament-specific variables
+    event="Tournament_04"
     pgn="./${event}.pgn"
     round=1
+    time_per_game="60000"
     
     touch $pgn
 
@@ -42,7 +53,7 @@ run_tournament() {
             tail "$pgn"
             round=$((round+1))
 
-            sleep 20  # Pause after each engine pair
+            sleep 10  # Pause after each engine pair
         done
     done
 
@@ -50,9 +61,7 @@ run_tournament() {
 }
 
 # Default engines (used when not in tournament mode)
-#engine_1=./engines/suprah-arm
 engine_1=./engines/suprah-arm
-#engine_2=./engines/mewel_V0.3.3.sh
 engine_2=./engines/mewel_V0.1.sh
 
 # Default variables
@@ -101,5 +110,13 @@ if [ $tournament_mode -eq 1 ]; then
     run_tournament
 else
     # Single game between engine_1 and engine_2
+    if [[ ! -f "$engine_1" ]]; then
+        echo "Error: Engine '$engine_1' not found."
+        exit 1
+    fi
+    if [[ ! -f "$engine_2" ]]; then
+        echo "Error: Engine '$engine_2' not found."
+        exit 1
+    fi
     ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging"
 fi

@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
 
-    log("Matt-Magie 1.1.0-candidate started", &logfile);
+    log("Matt-Magie 1.1.0 started", &logfile);
 
 
     let (tx0, rx) = mpsc::channel();
