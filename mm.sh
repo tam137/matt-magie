@@ -10,10 +10,13 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
+#        "suprah-arm-alpha1"
+#        "suprah-arm-alpha2"
+        "suprah-arm-alpha3"
         "suprah-arm"
         "mewel_V0.3.3.sh"        
         "mewel_V0.3.sh"
-        "mewel_V0.1.sh"
+#        "mewel_V0.1.sh"
     )
 
     # Check if all engines exist
@@ -25,7 +28,7 @@ run_tournament() {
     done
 
     # Override Tournament-specific variables
-    event="Tournament_04"
+    event="Tournament_03"
     pgn="./${event}.pgn"
     round=1
     time_per_game="60000"
@@ -62,7 +65,7 @@ run_tournament() {
 
 # Default engines (used when not in tournament mode)
 engine_1=./engines/suprah-arm
-engine_2=./engines/mewel_V0.1.sh
+engine_2=./engines/mewel_V0.3.3.sh
 
 # Default variables
 logfile=./mattmagie.log
