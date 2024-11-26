@@ -47,6 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let round = args.get(7).expect("MM pgn round not defined").to_string();
     let time_per_game = args.get(8).expect("MM pgn time per game not defined").to_string();
     let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
+    let debug_on: bool = if args.get(10).expect("MM log_on not defined") == ("debug_on") { true } else { false };
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -107,7 +108,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             tx1.send("1_".to_string() + &line.expect("MM read engine_1 std input failed")).expect("MM send engine_1 std input failed");
         }
     })?;
-
 
 
     let time_white = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>()
@@ -222,6 +222,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         
                 match msg {
                     "uciok" => {
+                        if debug_on {
+                            send(current_engine_process, "debug on", &logfile);
+                        }
                         send(current_engine_process, "isready", &logfile);
                     }
                     "readyok" => {
@@ -286,6 +289,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+    //send(&mut engine_process_0, "stop", &logfile);
+    //send(&mut engine_process_1, "stop", &logfile);
     send(&mut engine_process_0, "quit", &logfile);
     send(&mut engine_process_1, "quit", &logfile);
     log("finished Matt Magie", &logfile);
