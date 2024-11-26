@@ -10,13 +10,14 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
-#        "suprah-arm-alpha1"
-#        "suprah-arm-alpha2"
-        "suprah-arm-alpha3"
+#       "suprah-arm-alpha2"
+#       "suprah-arm-V00h"
+        "suprah-arm-V00i"
+#       "suprah-arm-V00g"
         "suprah-arm"
+        "suprah-arm-mt"
         "mewel_V0.3.3.sh"        
-        "mewel_V0.3.sh"
-#        "mewel_V0.1.sh"
+#       "mewel_V0.3.sh"
     )
 
     # Check if all engines exist
@@ -28,35 +29,37 @@ run_tournament() {
     done
 
     # Override Tournament-specific variables
-    event="Tournament_03"
+    event="Tournament_14"
     pgn="./${event}.pgn"
     round=1
     time_per_game="60000"
     
     touch $pgn
 
-    for ((i=0; i<${#engines[@]}; i++)); do
-        for ((j=i+1; j<${#engines[@]}; j++)); do
-            e1="${engine_dir}/${engines[$i]}"
-            e2="${engine_dir}/${engines[$j]}"
+    for ((r=0; r<$tournament_rounds; r++)); do
+        for ((i=0; i<${#engines[@]}; i++)); do
+            for ((j=i+1; j<${#engines[@]}; j++)); do
+                e1="${engine_dir}/${engines[$i]}"
+                e2="${engine_dir}/${engines[$j]}"
 
-            # Display which engines are currently playing
-            echo "Round $round: ${engines[$i]} (White) vs ${engines[$j]} (Black)"
-            ./Matt-Magie-arm "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging"
+                # Display which engines are currently playing
+                echo "Round $round: ${engines[$i]} (White) vs ${engines[$j]} (Black)"
+                ./Matt-Magie-arm "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging"
 
-            # Output the tail of the PGN file after each game
-            tail "$pgn"
-            round=$((round+1))
+                # Output the tail of the PGN file after each game
+                tail "$pgn"
+                round=$((round+1))
 
-            # Display which engines are currently playing
-            echo "Round $round: ${engines[$j]} (White) vs ${engines[$i]} (Black)"
-            ./Matt-Magie-arm "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging"
+                # Display which engines are currently playing
+                echo "Round $round: ${engines[$j]} (White) vs ${engines[$i]} (Black)"
+                ./Matt-Magie-arm "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging" "$debuging"
 
-            # Output the tail of the PGN file after each game
-            tail "$pgn"
-            round=$((round+1))
+                # Output the tail of the PGN file after each game
+                tail "$pgn"
+                round=$((round+1))
 
-            sleep 10  # Pause after each engine pair
+                sleep 10  # Pause after each engine pair
+            done
         done
     done
 
@@ -81,12 +84,14 @@ time_per_game="30000"
 
 # Logging setting
 logging="log_on"
+debuging="debug_on"
 
 # Initialize variables
 tournament_mode=0
+tournament_rounds=1
 
 # Parse command line options
-while getopts "ct" opt; do
+while getopts "ct:" opt; do
     case $opt in
         c)
             # Swap engines if -c is specified
@@ -97,11 +102,12 @@ while getopts "ct" opt; do
         t)
             # Enable tournament mode if -t is specified
             tournament_mode=1
+            tournament_rounds=$OPTARG
             ;;
         *)
-            echo "Usage: $0 [-c] [-t]"
+            echo "Usage: $0 [-c] [-t rounds]"
             echo "  -c  Swap engine colors (engine_2 plays as white)"
-            echo "  -t  Run in tournament mode"
+            echo "  -t rounds  Run in tournament mode with specified number of rounds"
             exit 1
             ;;
     esac
@@ -121,5 +127,5 @@ else
         echo "Error: Engine '$engine_2' not found."
         exit 1
     fi
-    ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging"
+    ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging"
 fi
