@@ -62,6 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "Engine_2".to_string(),
         time,
         format!("{}/0", time_per_game.to_string().parse::<i32>().expect("MM can not parse time arg") / 1000),
+        "".to_string(),
         pgn_path.to_string(),
     );
 
@@ -314,6 +315,7 @@ fn check_game_over(board: &mut Board,
             GameStatus::BlackWin | GameStatus::BlackWinByTime => "0-1",
             _ => "1/2-1/2",
         };
+        pgn.set_termination(&format!("{:?}", state));
         pgn.set_result(String::from(result));
         pgn.save();
         true
