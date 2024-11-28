@@ -9,6 +9,7 @@ pub struct Pgn {
     pub(crate) white: String,
     pub(crate) black: String,
     pub(crate) result: String,
+    pub(crate) termination: String,
     pub(crate) ply_count: String,
     pub(crate) time_control: String,
     pub(crate) time: String,
@@ -26,6 +27,7 @@ impl Pgn {
         black: String,
         time: String,
         time_control: String,
+        termination: String,
         path: String,
             ) -> Pgn {
 
@@ -38,6 +40,7 @@ impl Pgn {
             black: black,
             time: time,
             time_control: time_control,
+            termination: termination,
             result: String::new(),
             ply_count: String::new(),
             moves: String::new(),
@@ -105,8 +108,12 @@ impl Pgn {
         self.black = String::from(name);
     }
 
+    pub fn set_termination(&mut self, termination: &str) {
+        self.termination = String::from(termination);
+    }
+
     pub fn save(&self) {
-        let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{} {}\n\n",
+        let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[Termination \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{} {}\n\n",
         self.event,
         self.site,
         self.date,
@@ -114,9 +121,10 @@ impl Pgn {
         self.white,
         self.black,
         self.result,
+        self.termination,
         self.time_control,
         self.time,
-        self.moves,
+        self.moves,        
         self.result,
         );
 

@@ -10,14 +10,14 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
-#       "suprah-arm-alpha2"
-#       "suprah-arm-V00h"
+        "suprah-arm-V00i-threaded-3-imp"
         "suprah-arm-V00i"
-#       "suprah-arm-V00g"
-        "suprah-arm"
-        "suprah-arm-mt"
+        "suprah-arm-V00i-threaded-1"
+        "suprah-arm-V00i-threaded-3"
+        "suprah-arm-V00i-threaded-5"
+        "suprah-arm-alpha2"
         "mewel_V0.3.3.sh"        
-#       "mewel_V0.3.sh"
+        "mewel_V0.3.sh"
     )
 
     # Check if all engines exist
@@ -29,10 +29,10 @@ run_tournament() {
     done
 
     # Override Tournament-specific variables
-    event="Tournament_14"
+    event="Tournament_19"
     pgn="./${event}.pgn"
     round=1
-    time_per_game="60000"
+    time_per_game="90000"
     
     touch $pgn
 
