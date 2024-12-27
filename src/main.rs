@@ -46,6 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let site = args.get(6).expect("MM pgn site not defined").to_string();
     let round = args.get(7).expect("MM pgn round not defined").to_string();
     let time_per_game = args.get(8).expect("MM pgn time per game not defined").to_string();
+    let inc_per_move_in_ms = args.get(9).expect("MM Inc per move not defined").to_string();
     let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
     let debug_on: bool = if args.get(10).expect("MM log_on not defined") == ("debug_on") { true } else { false };
 
@@ -61,13 +62,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         "Engine_1".to_string(),
         "Engine_2".to_string(),
         time,
-        format!("{}/0", time_per_game.to_string().parse::<i32>().expect("MM can not parse time arg") / 1000),
+        format!("{}/{}", time_per_game.to_string().parse::<i32>().expect("MM can not parse time arg") / 1000, inc_per_move_in_ms),
         "".to_string(),
         pgn_path.to_string(),
     );
 
 
-    log("Matt-Magie 1.1.0 started", &logfile);
+    log("Matt-Magie 1.1.1 started", &logfile);
 
 
     let (tx0, rx) = mpsc::channel();
@@ -120,6 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let time_white_clone = Arc::clone(&time_white);
     let time_black_clone = Arc::clone(&time_black);
 
+    let inc_per_move_in_ms = inc_per_move_in_ms.to_string().parse::<i32>().expect("MM can not parse inc per move arg");
 
     let _handle_1 = thread::Builder::new().name("Time_Control".to_string()).spawn(move || {
 
@@ -130,9 +132,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(message) => {
                     match message {
                         TimeControl::WhiteToMove => {
+                            *time_white_clone.lock().expect("MM could not unlock time_white") += inc_per_move_in_ms;
                             to_move = TimeControl::WhiteToMove;
                         },
                         TimeControl::BlackToMove => {
+                            *time_black_clone.lock().expect("MM could not unlock time_white") += inc_per_move_in_ms;
                             to_move = TimeControl::BlackToMove;
                         },
                         TimeControl::AllStop => {
