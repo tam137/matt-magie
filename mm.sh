@@ -10,12 +10,11 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
-        "suprah-arm-V00i-threaded-3-imp"
-        "suprah-arm-V00i"
-        "suprah-arm-V00i-threaded-1"
-        "suprah-arm-V00i-threaded-3"
-        "suprah-arm-V00i-threaded-5"
-        "suprah-arm-alpha2"
+        "rip-V0.1.2-candidate-no-skip-val"
+        "rip-V0.1.2-candidate-skip-val"
+        "rip-V0.1.0"
+        "rip-V0.1.1"
+        "rip-V0.1.2-candidate"
         "mewel_V0.3.3.sh"        
         "mewel_V0.3.sh"
     )
@@ -29,10 +28,10 @@ run_tournament() {
     done
 
     # Override Tournament-specific variables
-    event="Tournament_19"
+    event="Tournament_52"
     pgn="./${event}.pgn"
     round=1
-    time_per_game="90000"
+    time_per_game="22000"
     
     touch $pgn
 
@@ -67,8 +66,9 @@ run_tournament() {
 }
 
 # Default engines (used when not in tournament mode)
-engine_1=./engines/suprah-arm
-engine_2=./engines/mewel_V0.3.3.sh
+engine_1=./engines/rip
+engine_2=./engines/rip-V0.1.1
+#engine_2=./engines/mewel_V0.3.3.sh
 
 # Default variables
 logfile=./mattmagie.log
@@ -128,4 +128,5 @@ else
         exit 1
     fi
     ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging"
+    tail $pgn
 fi
