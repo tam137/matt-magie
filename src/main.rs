@@ -191,7 +191,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
-            log(&format!("white_time: {} black_time: {}", remaining_time_white, remaining_time_black), &logfile);
+            log(&format!("white_time {} winc {} black_time {} binc {}",
+                remaining_time_white,
+                inc_per_move_in_ms,
+                remaining_time_black,
+                inc_per_move_in_ms),
+                &logfile);
             break;
         } 
 
