@@ -153,9 +153,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             if to_move == TimeControl::WhiteToMove {
-                *time_white_clone.lock().expect("MM could not unlock time_white") -= 10;
+                let  mut wtime = time_white_clone.lock().expect("MM could not unlock time_white");
+                if *wtime < 1000 {
+                    *wtime = 1000;
+                } else {
+                    *wtime -= 10;
+                }
             } else if to_move == TimeControl::BlackToMove {
-                *time_black_clone.lock().expect("MM could not unlock time_white") -= 10;
+                let  mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
+                if *btime < 1000 {
+                    *btime = 1000;
+                } else {
+                    *btime -= 10;
+                }
             }
             thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -284,7 +294,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         let all_moves = format!("position startpos moves {}", all_moves_str);
                         send(other_engine_process, &all_moves, &logfile);
-                        send(other_engine_process, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
+
+                        // inc_per_move_in_ms
+                        send(other_engine_process, &format!("go wtime {} winc {} btime {} binc {}",
+                            remaining_time_white,
+                            inc_per_move_in_ms,
+                            remaining_time_black,
+                            inc_per_move_in_ms
+                            ),
+                            &logfile);
+
                         if !white {
                             tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send white time command");
                         } else {
@@ -310,6 +329,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn check_game_over(board: &mut Board,
     tx_clock: &mpsc::Sender<TimeControl>, logfile: &str, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
+
+    if board.move_count > 100 {
+        board.game_status = GameStatus::Draw;
+    }
 
     if board.game_status != GameStatus::Normal {
         log("Game status != Normal", logfile);
