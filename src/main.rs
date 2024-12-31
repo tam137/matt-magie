@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
 
-    log("Matt-Magie 1.1.1 started", &logfile);
+    log("Matt-Magie 1.1.2 started", &logfile);
 
 
     let (tx0, rx) = mpsc::channel();
@@ -161,8 +161,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             } else if to_move == TimeControl::BlackToMove {
                 let  mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
-                if *btime < 1000 {
-                    *btime = 1000;
+                if *btime < 2000 {
+                    *btime = 2000;
                 } else {
                     *btime -= 10;
                 }
