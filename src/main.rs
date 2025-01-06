@@ -38,9 +38,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let args: Vec<String> = env::args().collect();
 
-    let engine_0 = args.get(1).expect("MM engine_0 not defined");
-    let engine_1 = args.get(2).expect("MM engine_1 not defined");
-    let logfile = args.get(3).expect("MM logfile path not defined").to_string();
+    let engine_0 = args.get(1).cloned().expect("MM engine_0 not defined");
+    let engine_1 = args.get(2).cloned().expect("MM engine_1 not defined");
+    let logfile = Arc::new(args.get(3).expect("MM logfile path not defined").to_string());
     let pgn_path = args.get(4).expect("MM pgn file path not defined").to_string();
     let event = args.get(5).expect("MM pgn event not defined").to_string();
     let site = args.get(6).expect("MM pgn site not defined").to_string();
@@ -49,6 +49,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let inc_per_move_in_ms = args.get(9).expect("MM Inc per move not defined").to_string();
     let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
     let debug_on: bool = if args.get(10).expect("MM log_on not defined") == ("debug_on") { true } else { false };
+
+    log(&format!("debug is {}", debug_on), &logfile);
+
+    let logfile_t1 = Arc::clone(&logfile);
+    let logfile_t2 = Arc::clone(&logfile);
+    let logfile_t3 = Arc::clone(&logfile);
+    let logfile_t4 = Arc::clone(&logfile);
+    
+    let engine_0_t1 = engine_0.clone();
+    let engine_1_t1 = engine_1.clone();
+    
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -68,48 +79,156 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
 
-    log("Matt-Magie 1.1.2 started", &logfile);
-
+    log("Matt-Magie 1.1.3-candidate started", &logfile);
 
     let (tx0, rx) = mpsc::channel();
     let tx1 = mpsc::Sender::clone(&tx0);
     let (tx_clock, rx_clock) = mpsc::channel::<TimeControl>();
 
-    let mut engine_process_0: Child = Command::new(engine_0)
+    // load engine processes
+    let mut engine_process_0 = Arc::new(Mutex::new(Command::new(engine_0)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| format!("Failed to spawn engine: {}", e))?));
 
-    log(&format!("loaded eng0 {}: {} ", engine_process_0.id(), engine_0), &logfile);
-    let engine_0_stdout = engine_process_0.stdout.take().ok_or("MM Failed to retrieve stdout")?;
-    let id_engine_0: u32 = engine_process_0.id();
-    send(&mut engine_process_0, "uci", &logfile);    
-
-
-    let mut engine_process_1: Child = Command::new(engine_1)
+    
+    let mut engine_process_1 = Arc::new(Mutex::new(Command::new(engine_1)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| format!("Failed to spawn engine: {}", e))?));
 
-    log(&format!("loaded eng1 {}: {} ", engine_process_1.id(), engine_1), &logfile);
-    let engine_1_stdout = engine_process_1.stdout.take().ok_or("MM Failed to retrieve stdout")?;
-    let id_engine_1: u32 = engine_process_1.id();
-    send(&mut engine_process_1, "uci", &logfile);
+    let engine_process_0_t1 = engine_process_0.clone();
+    let engine_process_1_t1 = engine_process_1.clone();
+    let mut engine_process_0_t2 = engine_process_0.clone();
+    let mut engine_process_1_t2 = engine_process_1.clone();
+
+    {
+        match engine_process_0.lock() {
+            Ok(engine_process_0_lock) => {
+                log(&format!("loaded eng0 {}", engine_process_0_lock.id()), &logfile_t1);
+            }
+            Err(e) => {
+                log(&format!("error Could not lock Engine 0, {}", e), &logfile)
+            }
+        };
+        send(&mut engine_process_0, "uci", &logfile);
+    }
+
+    {
+        match engine_process_1.lock() {
+            Ok(engine_process_1_lock) => {
+                log(&format!("loaded eng1 {}", engine_process_1_lock.id()), &logfile_t2);
+            }
+            Err(e) => {
+                log(&format!("error Could not lock Engine 1, {}", e), &logfile)
+            }
+        };
+        send(&mut engine_process_1, "uci", &logfile);
+    }
 
 
+    // check threads if engine processes are stil available2
+    let _ = thread::Builder::new().name("Thread 0 observer".to_string()).spawn(move || {
+        loop {
+            match engine_process_0.lock() {
+                Ok(mut engine_process_0_lock) => {
+                    match engine_process_0_lock.try_wait() {
+                        Ok(Some(status)) => log(&format!("Engine {} closed. Code {}", engine_0_t1, status), &logfile_t1),
+                        Ok(None) => {}, // no status - engine is ok
+                        Err(e) => log(&format!("error could not receive status for engine {}, {}", engine_0_t1, e), &logfile_t1),
+                    }
+                }
+                Err(e) => {
+                    log(&format!("error Could not lock Engine 1"), &logfile_t1)
+                }
+            };
+            thread::sleep(std::time::Duration::from_millis(1000));
+        }
+    });
+
+    let _ = thread::Builder::new().name("Thread 1 observer".to_string()).spawn(move || {
+        loop {
+            match engine_process_1.lock() {
+                Ok(mut engine_process_1_lock) => {
+                    match engine_process_1_lock.try_wait() {
+                        Ok(Some(status)) => log(&format!("Engine {} closed. Code {}", engine_1_t1, status), &logfile_t2),
+                        Ok(None) => {}, // no status - engine is ok
+                        Err(e) => log(&format!("error could not receive status for engine {}, {}", engine_1_t1, e), &logfile_t2),
+                    }
+                }
+                Err(e) => {
+                    log(&format!("error Could not lock Engine 1"), &logfile_t2)
+                }
+            };
+            thread::sleep(std::time::Duration::from_millis(1000));
+        }
+    });
+
+
+
+    // receive engine input
     let _handle_0 = thread::Builder::new().name("Thread 0".to_string()).spawn(move || {
-        let reader_eng0 = BufReader::new(engine_0_stdout);
-        for line in reader_eng0.lines() {
-            tx0.send("0_".to_string() + &line.expect("MM read engine_0 std input failed")).expect("MM send engine_0 std input failed");
+        loop {
+            match engine_process_0_t1.lock() {
+                Ok(mut engine_process_0_lock) => {
+                    let engine_0_stdout = engine_process_0_lock.stdout.take().expect("MM Failed to retrieve stdout Eng_0");
+                    let reader_eng0 = BufReader::new(engine_0_stdout);
+                    for line in reader_eng0.lines() {
+                        tx0.send("0_".to_string() + &line.expect("MM read engine_0 std input failed"))
+                            .expect("MM send engine_0 std input failed");
+                    }
+                }
+                Err(e) => {
+                    log(&format!("error Could not lock Engine 0"), &logfile_t3)
+                }
+            };
+            thread::sleep(std::time::Duration::from_millis(1000));
         }
-    })?;
+    });
 
-    let _handle_1 = thread::Builder::new().name("Thread 1".to_string()).spawn(move || {
-        let reader_eng1 = BufReader::new(engine_1_stdout);
-        for line in reader_eng1.lines() {
-            tx1.send("1_".to_string() + &line.expect("MM read engine_1 std input failed")).expect("MM send engine_1 std input failed");
+    let tx1 = std::sync::mpsc::channel::<String>().0; // Simulierter Sender
+
+    let _handle_1 = thread::Builder::new().name("Thread 1".to_string()).spawn({
+        let engine_process_1_t1 = Arc::clone(&engine_process_1_t1);
+
+        move || {
+            loop {
+                if let Ok(mut engine_process_1_lock) = engine_process_1_t1.lock() {
+                    // Subprozess-Stdout holen
+                    let engine_1_stdout = engine_process_1_lock
+                        .stdout
+                        .take()
+                        .expect("Failed to retrieve stdout");
+
+                    // Datei in nicht-blockierendem Modus setzen
+                    let raw_fd = engine_1_stdout.as_raw_fd();
+                    fcntl(raw_fd, FcntlArg::F_SETFL(OFlag::O_NONBLOCK)).expect("Failed to set non-blocking");
+
+                    let reader_eng1 = BufReader::new(unsafe { File::from_raw_fd(raw_fd) });
+
+                    for line in reader_eng1.lines() {
+                        match line {
+                            Ok(line) => {
+                                tx1.send("1_".to_string() + &line)
+                                    .expect("Failed to send message");
+                            }
+                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                // Keine Daten verfügbar
+                                break;
+                            }
+                            Err(e) => {
+                                eprintln!("Error reading line: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(1000));
+            }
         }
-    })?;
+    });
 
 
     let time_white = Arc::new(Mutex::new(time_per_game.to_string().parse::<i32>()
@@ -195,18 +314,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if game_status == 2 {
             // all Engines ready for new game
-            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
+            send(&mut engine_process_0_t2, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile_t4);
             tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
             game_status += 1;
         }
 
-        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
+        if check_game_over(&mut game.board, &tx_clock, &logfile_t4, &mut pgn, &all_moves_long_algebraic, &service) {
             log(&format!("white_time {} winc {} black_time {} binc {}",
                 remaining_time_white,
                 inc_per_move_in_ms,
                 remaining_time_black,
                 inc_per_move_in_ms),
-                &logfile);
+                &logfile_t4);
             break;
         } 
 
@@ -219,7 +338,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             },
             Err(mpsc::TryRecvError::Disconnected) => {
-                log("disconnected from command queue", &logfile);
+                log("disconnected from command queue", &logfile_t4);
                 break;
             }
         };     
@@ -228,27 +347,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         match result {
             Ok(value) => {
                 let (id_engine, msg, current_engine_process, other_engine_process, white) = if value.starts_with("0") {
-                    (id_engine_0, &value[2..], &mut engine_process_0, &mut engine_process_1, true)
+                    ("Eng_0", &value[2..], &mut engine_process_0_t2, &mut engine_process_1_t2, true)
                 } else {
-                    (id_engine_1, &value[2..], &mut engine_process_1, &mut engine_process_0, false)
+                    ("Eng_1", &value[2..], &mut engine_process_1_t2, &mut engine_process_0_t2, false)
                 };
         
                 if msg.starts_with("log") && log_on {
-                    log(&format!("{}\t->logger\t{}", id_engine, value), &logfile);
+                    log(&format!("{}\t->logger\t{}", id_engine, value), &logfile_t4);
                 } else {
-                    log(&format!("{}\t->  mat\t\t{}", id_engine, value), &logfile);
+                    log(&format!("{}\t->  mat\t\t{}", id_engine, value), &logfile_t4);
                 }
                 
         
                 match msg {
                     "uciok" => {
                         if debug_on {
-                            send(current_engine_process, "debug on", &logfile);
+                            send(current_engine_process, "debug on", &logfile_t4);
                         }
-                        send(current_engine_process, "isready", &logfile);
+                        send(current_engine_process, "isready", &logfile_t4);
                     }
                     "readyok" => {
-                        send(current_engine_process, "ucinewgame", &logfile);
+                        send(current_engine_process, "ucinewgame", &logfile_t4);
                         game_status += 1;
                     }
                     _ if msg.starts_with("id name") => {
@@ -283,17 +402,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let possible_turns = service.move_gen.generate_valid_moves_list(&mut game.board);
                         
                         if possible_turns.is_empty() {
-                            log("found no moves", &logfile);
+                            log("found no moves", &logfile_t4);
                         }
 
                         let all_moves_str = game.made_moves_str.as_str();
                 
-                        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
+                        if check_game_over(&mut game.board, &tx_clock, &logfile_t4, &mut pgn, &all_moves_long_algebraic, &service) {
                             break;
                         }              
 
                         let all_moves = format!("position startpos moves {}", all_moves_str);
-                        send(other_engine_process, &all_moves, &logfile);
+                        send(other_engine_process, &all_moves, &logfile_t4);
 
                         // inc_per_move_in_ms
                         send(other_engine_process, &format!("go wtime {} winc {} btime {} binc {}",
@@ -302,7 +421,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             remaining_time_black,
                             inc_per_move_in_ms
                             ),
-                            &logfile);
+                            &logfile_t4);
 
                         if !white {
                             tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send white time command");
@@ -320,13 +439,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     //send(&mut engine_process_0, "stop", &logfile);
     //send(&mut engine_process_1, "stop", &logfile);
-    send(&mut engine_process_0, "quit", &logfile);
-    send(&mut engine_process_1, "quit", &logfile);
-    log("finished Matt Magie", &logfile);
+    send(&mut engine_process_0_t2, "quit", &logfile_t4);
+    send(&mut engine_process_1_t2, "quit", &logfile_t4);
+    log("finished Matt Magie", &logfile_t4);
     std::process::exit(0);
 }
 
 
+/// checks the Game Status. You can force a GameStatus by set the GameStatus enum in board struct
 fn check_game_over(board: &mut Board,
     tx_clock: &mpsc::Sender<TimeControl>, logfile: &str, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
 
@@ -357,14 +477,25 @@ fn check_game_over(board: &mut Board,
 }
 
 
-
-fn send(engine: &mut Child, command: &str, logfile: &str) {
+/// send a cmd to the engine process
+fn send(engine: &mut Arc<Mutex<Child>>, command: &str, logfile: &str) {
     let command_with_newline = format!("{}\n", command);
-    let stdin = engine.stdin.as_mut().expect("Failed");
-    stdin.write_all(&command_with_newline.as_bytes())
-        .unwrap_or_else(|err| {
-            eprintln!("Failed to write to stdin Command ->: {} - {}", command, err);
-        });
-    stdin.flush().unwrap();
-    log(&format!("mat\t->  {}\t{}", engine.id(), command), logfile);
+
+    match engine.lock() {
+        Ok(mut engine_process) => {
+            let stdin = engine_process.stdin.as_mut().expect("MM failed open std in channel");
+            stdin.write_all(&command_with_newline.as_bytes())
+                .unwrap_or_else(|err| {
+                    eprintln!("MM Failed to write to stdin Command ->: {} - {}", command, err);
+                });
+            stdin.flush().unwrap();
+            log(&format!("mat\t->  {}\t{}", engine_process.id(), command), logfile);
+        }
+        Err(e) => {
+            log(&format!("error Could not lock Engine, {}", e), &logfile)
+        }
+    };
+
+
+
 }
