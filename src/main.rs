@@ -188,45 +188,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let tx1 = std::sync::mpsc::channel::<String>().0; // Simulierter Sender
-
-    let _handle_1 = thread::Builder::new().name("Thread 1".to_string()).spawn({
-        let engine_process_1_t1 = Arc::clone(&engine_process_1_t1);
-
-        move || {
-            loop {
-                if let Ok(mut engine_process_1_lock) = engine_process_1_t1.lock() {
-                    // Subprozess-Stdout holen
-                    let engine_1_stdout = engine_process_1_lock
-                        .stdout
-                        .take()
-                        .expect("Failed to retrieve stdout");
-
-                    // Datei in nicht-blockierendem Modus setzen
-                    let raw_fd = engine_1_stdout.as_raw_fd();
-                    fcntl(raw_fd, FcntlArg::F_SETFL(OFlag::O_NONBLOCK)).expect("Failed to set non-blocking");
-
-                    let reader_eng1 = BufReader::new(unsafe { File::from_raw_fd(raw_fd) });
-
-                    for line in reader_eng1.lines() {
-                        match line {
-                            Ok(line) => {
-                                tx1.send("1_".to_string() + &line)
-                                    .expect("Failed to send message");
-                            }
-                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                // Keine Daten verfügbar
-                                break;
-                            }
-                            Err(e) => {
-                                eprintln!("Error reading line: {}", e);
-                                break;
-                            }
-                        }
+    let _handle_1 = thread::Builder::new().name("Thread 1".to_string()).spawn(move || {
+        loop {
+            match engine_process_1_t1.lock() {
+                Ok(mut engine_process_1_lock) => {
+                    let engine_1_stdout = engine_process_1_lock.stdout.take().expect("MM Failed to retrieve stdout Eng_1");
+                    let reader_eng1 = BufReader::new(engine_1_stdout);
+                    for line in reader_eng1.lines() { // TODO
+                        tx1.send("1_".to_string() + &line.expect("MM read engine_1 std input failed"))
+                            .expect("MM send engine_1 std input failed");
                     }
                 }
-                thread::sleep(Duration::from_millis(1000));
-            }
+                Err(e) => {
+                    log(&format!("error Could not lock Engine 1"), &logfile)
+                }
+            };
+            thread::sleep(std::time::Duration::from_millis(1000));
         }
     });
 
