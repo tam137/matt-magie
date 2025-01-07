@@ -10,13 +10,9 @@ run_tournament() {
     engine_dir="engines"
 
     engines=(
-        "rip-V0.1.2-candidate-no-skip-val"
-        "rip-V0.1.2-candidate-skip-val"
-        "rip-V0.1.0"
-        "rip-V0.1.1"
-        "rip-V0.1.2-candidate"
-        "mewel_V0.3.3.sh"        
-        "mewel_V0.3.sh"
+        "rip-V0.1.2"
+        "rip-V0.1.3"
+        "rip-V0.1.3-one-thread"
     )
 
     # Check if all engines exist
@@ -28,10 +24,11 @@ run_tournament() {
     done
 
     # Override Tournament-specific variables
-    event="Tournament_52"
+    event="Tournament_68"
     pgn="./${event}.pgn"
     round=1
-    time_per_game="22000"
+    time_per_game="40000"
+    time_inc="0"
     
     touch $pgn
 
@@ -43,7 +40,7 @@ run_tournament() {
 
                 # Display which engines are currently playing
                 echo "Round $round: ${engines[$i]} (White) vs ${engines[$j]} (Black)"
-                ./Matt-Magie-arm "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging"
+                ./Matt-Magie-arm "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$time_inc" "$logging" "$debuging"
 
                 # Output the tail of the PGN file after each game
                 tail "$pgn"
@@ -51,7 +48,7 @@ run_tournament() {
 
                 # Display which engines are currently playing
                 echo "Round $round: ${engines[$j]} (White) vs ${engines[$i]} (Black)"
-                ./Matt-Magie-arm "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging" "$debuging"
+                ./Matt-Magie-arm "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$time_inc" "$logging" "$debuging"
 
                 # Output the tail of the PGN file after each game
                 tail "$pgn"
@@ -66,8 +63,8 @@ run_tournament() {
 }
 
 # Default engines (used when not in tournament mode)
-engine_1=./engines/rip
-engine_2=./engines/rip-V0.1.1
+engine_1=./engines/rip-V0.1.1
+engine_2=./engines/rip-V0.1.2
 #engine_2=./engines/mewel_V0.3.3.sh
 
 # Default variables
@@ -81,6 +78,7 @@ round="1"
 
 # Time settings in ms
 time_per_game="30000"
+time_inc="0"
 
 # Logging setting
 logging="log_on"
@@ -127,6 +125,6 @@ else
         echo "Error: Engine '$engine_2' not found."
         exit 1
     fi
-    ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$logging" "$debuging"
+    ./Matt-Magie-arm "$engine_1" "$engine_2" "$logfile" "$pgn" "$event" "$site" "$round" "$time_per_game" "$time_inc" "$logging" "$debuging"
     tail $pgn
 fi
