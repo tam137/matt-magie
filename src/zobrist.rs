@@ -1,6 +1,6 @@
 use crate::model::Board;
 use std::collections::HashMap;
-use rand::{Rng, rngs::StdRng, SeedableRng};
+use rand::{RngExt, rngs::StdRng, SeedableRng};
 
 
 const BOARD_SIZE: usize = 120;
@@ -39,14 +39,14 @@ impl ZobristTable {
         for i in 0..BOARD_SIZE {
             for j in FIG {
                 let fig_index = fig_map.get(&(j as usize)).unwrap();
-                table[i][*fig_index] = rng.gen();
+                table[i][*fig_index] = rng.random();
             }
         }
-        let white_to_move = rng.gen();
+        let white_to_move = rng.random();
         Self { table, fig_map, white_to_move, hash_map: HashMap::with_capacity(1000), entries: 0 }
     }
 
-    pub fn gen(&self, board: &Board) -> u64 {
+    pub fn gen_hash(&self, board: &Board) -> u64 {
         let mut hash = 0u64;
         if board.white_to_move {
             hash ^= self.white_to_move;
