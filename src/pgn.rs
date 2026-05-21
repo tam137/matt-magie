@@ -61,31 +61,31 @@ impl Pgn {
             .split_whitespace()
             .map(|mv| {
                 if mv.contains('=') {
-                    // Es handelt sich um eine Bauernumwandlung
+                    // This is a pawn promotion
                     let parts: Vec<&str> = mv.split('=').collect();
                     if parts.len() != 2 {
-                        // Ungültiges Format, Rückgabe des Originalzugs
+                        // Invalid format, return the original move
                         return mv.to_string();
                     }
-                    let promotion_piece = parts[1]; // Z.B. "Q"
-                    let move_without_promotion = parts[0]; // Z.B. "e7e8" oder "d7e8"
+                    let promotion_piece = parts[1]; // E.g. "Q"
+                    let move_without_promotion = parts[0]; // E.g. "e7e8" or "d7e8"
     
-                    // Extrahiere das Von- und Zielfeld
-                    let from_square = &move_without_promotion[0..2]; // Z.B. "e7"
-                    let to_square = &move_without_promotion[2..4];   // Z.B. "e8"
+                    // Extract start and target squares
+                    let from_square = &move_without_promotion[0..2]; // E.g. "e7"
+                    let to_square = &move_without_promotion[2..4];   // E.g. "e8"
     
-                    let from_file = &from_square[0..1]; // Z.B. "e"
-                    let to_file = &to_square[0..1];     // Z.B. "e" oder "d"
+                    let from_file = &from_square[0..1]; // E.g. "e"
+                    let to_file = &to_square[0..1];     // E.g. "e" or "d"
     
                     if from_file != to_file {
-                        // Schlagzug bei der Umwandlung
+                        // Capture during promotion
                         format!("{}x{}={}", from_file, to_square, promotion_piece)
                     } else {
-                        // Keine Schlagzug, normale Umwandlung
+                        // No capture, normal promotion
                         format!("{}={}", to_square, promotion_piece)
                     }
                 } else {
-                    // Behandlung von Rochade und anderen Zügen
+                    // Handling castling and other moves
                     match mv {
                         "Ke1g1" | "Ke8g8" => "0-0".to_string(),
                         "Ke1c1" | "Ke8c8" => "0-0-0".to_string(),

@@ -36,7 +36,7 @@ BEGIN {
     if (result != "" && white != "" && black != "") {
         print result " " white " vs " black
 
-        # Punktevergabe
+        # Point assignment
         if (result == "1-0") {
             points[white] += 1
             games[white] += 1
@@ -57,7 +57,7 @@ BEGIN {
 END {
     PROCINFO["sorted_in"] = "@val_num_desc"
 
-    print "\n[Platz]\t[Spiele]\t[Punkte]\t[EngineName]"
+    print "\n[Rank]\t[Games]\t[Points]\t[EngineName]"
     rank = 0
     for (player in points) {
         rank += 1

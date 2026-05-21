@@ -10,3 +10,6 @@ src/.vscode/launch.json
 .idea/
 Cargo.lock
 buildVersions/
+engines/
+mattmagie.log
+suprah_games.pgn
