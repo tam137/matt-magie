@@ -13,3 +13,7 @@ buildVersions/
 engines/
 mattmagie.log
 suprah_games.pgn
+.mattmagie.log.swp
+mattmagie.log.backup
+pgns/
+test_tournament.pgn

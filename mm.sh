@@ -218,11 +218,11 @@ run_single_match() {
 
 # Run Tournament
 run_tournament() {
-    local engines=($(list_engines))
-    if [ ${#engines[@]} -lt 2 ]; then
+    local all_engines=($(list_engines))
+    if [ ${#all_engines[@]} -lt 2 ]; then
         print_header
         echo -e "${RED}At least 2 engines in the 'engines/' directory are required to run a tournament!${NC}"
-        echo -e "Found: ${#engines[@]}"
+        echo -e "Found: ${#all_engines[@]}"
         echo ""
         read -p "Press Enter to continue..." temp
         return
@@ -230,6 +230,47 @@ run_tournament() {
 
     print_header
     echo -e "${YELLOW}--- Configure Tournament Mode ---${NC}"
+    echo ""
+    echo "Available Engines:"
+    for i in "${!all_engines[@]}"; do
+        echo -e "  [${CYAN}$((i+1))${NC}] ${all_engines[$i]}"
+    done
+    echo ""
+
+    local engines=()
+    while true; do
+        read -p "Select participating engines (comma-separated numbers, e.g. 1,3,4, or 'all') [Default: all]: " selection
+        if [[ -z "$selection" || "$selection" == "all" ]]; then
+            engines=("${all_engines[@]}")
+            break
+        fi
+
+        # Parse comma-separated list
+        IFS=',' read -r -a selected_indices <<< "$selection"
+        local valid=true
+        local selected_engines=()
+        for idx in "${selected_indices[@]}"; do
+            idx=$(echo "$idx" | tr -d ' ')
+            if [[ "$idx" =~ ^[0-9]+$ && "$idx" -ge 1 && "$idx" -le ${#all_engines[@]} ]]; then
+                selected_engines+=("${all_engines[$((idx-1))]}")
+            else
+                valid=false
+                break
+            fi
+        done
+
+        if [ "$valid" = true ]; then
+            if [ ${#selected_engines[@]} -lt 2 ]; then
+                echo -e "${RED}Error: You must select at least 2 engines!${NC}"
+            else
+                engines=("${selected_engines[@]}")
+                break
+            fi
+        else
+            echo -e "${RED}Invalid input. Please enter valid numbers separated by commas (e.g. 1,3,4).${NC}"
+        fi
+    done
+
     echo ""
     echo "Participating Engines:"
     for i in "${!engines[@]}"; do
@@ -256,6 +297,21 @@ run_tournament() {
         rounds="$rounds_input"
     fi
 
+    # PGN Filename Setting
+    local pgn=""
+    while true; do
+        read -p "Enter PGN filename (required, e.g. my_tournament.pgn): " pgn_input
+        pgn_input=$(echo "$pgn_input" | tr -d ' ')
+        if [[ ! -z "$pgn_input" ]]; then
+            if [[ "$pgn_input" != *.pgn ]]; then
+                pgn_input="${pgn_input}.pgn"
+            fi
+            pgn="./$pgn_input"
+            break
+        fi
+        echo -e "${RED}PGN filename is required!${NC}"
+    done
+
     # Calculate total games
     local num_engines=${#engines[@]}
     local match_pairs=$((num_engines * (num_engines - 1) / 2))
@@ -269,7 +325,7 @@ run_tournament() {
     echo -e "  Total Games: $total_games"
     echo ""
 
-    local pgn="./suprah_tournament.pgn"
+    # pgn is defined dynamically above
     local logfile="./mattmagie.log"
     local event="Suprah-Tournament"
     local site="local"
