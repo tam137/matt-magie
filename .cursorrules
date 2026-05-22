@@ -10,3 +10,8 @@
 - **Edition:** Rust Edition 2024.
 - **Formatting:** Adhere to standard Rust formatting conventions.
 - **Documentation:** Write all docstrings and code comments in clear, technical English.
+
+## Testing & Verification Policy
+- **Simple Implementations:** Standard unit tests only (`cargo test`).
+- **Release Verification Requirement:** Run `./run_verify.sh` exclusively during a release cycle to test play strength and crash-free behavior over 10 games. Do not run tournament verifications for simple development changes.
+
