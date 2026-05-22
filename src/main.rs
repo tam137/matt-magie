@@ -153,19 +153,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             if to_move == TimeControl::WhiteToMove {
-                let  mut wtime = time_white_clone.lock().expect("MM could not unlock time_white");
-                if *wtime < 2000 {
-                    *wtime = 2000;
-                } else {
-                    *wtime -= 10;
-                }
+                let mut wtime = time_white_clone.lock().expect("MM could not unlock time_white");
+                *wtime -= 10;
             } else if to_move == TimeControl::BlackToMove {
-                let  mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
-                if *btime < 2000 {
-                    *btime = 2000;
-                } else {
-                    *btime -= 10;
-                }
+                let mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
+                *btime -= 10;
             }
             thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -184,12 +176,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     // mainthread loop received engine inputs from all engines
     loop {
 
+        // Check if either engine process has exited unexpectedly
+        if let Ok(Some(status)) = engine_process_0.try_wait() {
+            log(&format!("Engine 0 exited unexpectedly: {:?}", status), &logfile);
+            game.board.game_status = GameStatus::BlackWinByTime;
+        } else if let Ok(Some(status)) = engine_process_1.try_wait() {
+            log(&format!("Engine 1 exited unexpectedly: {:?}", status), &logfile);
+            game.board.game_status = GameStatus::WhiteWinByTime;
+        }
+
         remaining_time_white = *time_white.lock().expect("MM could not unlock time_white (remaining_time)");
         remaining_time_black = *time_black.lock().expect("MM could not unlock time_white (remaining_time)");
     
         if remaining_time_white <= 0 {
             game.board.game_status = GameStatus::BlackWinByTime;
-        } else if remaining_time_black <= 0{
+        } else if remaining_time_black <= 0 {
             game.board.game_status = GameStatus::WhiteWinByTime;
         }
 

@@ -332,8 +332,13 @@ run_tournament() {
     local logging="log_on"
     local debuging="debug_on"
 
-    # Reset tournament PGN so we have a clean scoreboard
-    echo -n "" > "$pgn"
+    # If the PGN file already exists, notify the user and append to it. Otherwise, create it empty.
+    if [[ -f "$pgn" ]]; then
+        echo -e "${YELLOW}Note: PGN file '$pgn_input' already exists. New games will be appended!${NC}"
+        echo ""
+    else
+        touch "$pgn"
+    fi
 
     local game_num=1
     for ((r=0; r<rounds; r++)); do
