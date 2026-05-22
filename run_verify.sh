@@ -1,9 +1,9 @@
 #!/bin/bash
 MM_EXEC="./target/release/Matt-Magie"
 ENGINE_OLD="engines/suprah-0.2.2"
-ENGINE_NEW="engines/suprah-0.4.1"
-PGN="verification_v0.4.1.pgn"
-LOG="verification_v0.4.1.log"
+ENGINE_NEW="engines/suprah-0.4.2"
+PGN="verification_v0.4.2.pgn"
+LOG="verification_v0.4.2.log"
 
 rm -f "$PGN" "$LOG"
 touch "$PGN"

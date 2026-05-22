@@ -13,5 +13,5 @@
 
 ## Testing & Verification Policy
 - **Simple Implementations:** Standard unit tests only (`cargo test`).
-- **Release Verification Requirement:** Run `./run_verify.sh` exclusively during a release cycle to test play strength and crash-free behavior over 10 games. Do not run tournament verifications for simple development changes.
+- **Release Verification Requirement:** Run `./run_verify.sh` ONLY if the USER explicitly requests or mentions it during a release cycle. Do NOT run tournament verifications by default for releases or simple development changes unless explicitly asked.
 
