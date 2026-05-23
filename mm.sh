@@ -312,68 +312,100 @@ run_tournament() {
         echo -e "${RED}PGN filename is required!${NC}"
     done
 
-    # Calculate total games
-    local num_engines=${#engines[@]}
-    local match_pairs=$((num_engines * (num_engines - 1) / 2))
-    local total_games=$((match_pairs * 2 * rounds))
+    while true; do
+        # Calculate total games
+        local num_engines=${#engines[@]}
+        local match_pairs=$((num_engines * (num_engines - 1) / 2))
+        local total_games=$((match_pairs * 2 * rounds))
 
-    print_header
-    echo -e "${GREEN}Tournament started:${NC}"
-    echo -e "  Number of Engines: $num_engines"
-    echo -e "  Time Control: $((time_control/1000))s + $((time_inc))ms"
-    echo -e "  Rounds: $rounds"
-    echo -e "  Total Games: $total_games"
-    echo ""
-
-    # pgn is defined dynamically above
-    local logfile="./mattmagie.log"
-    local event="Suprah-Tournament"
-    local site="local"
-    local logging="log_on"
-    local debuging="debug_on"
-
-    # If the PGN file already exists, notify the user and append to it. Otherwise, create it empty.
-    if [[ -f "$pgn" ]]; then
-        echo -e "${YELLOW}Note: PGN file '$pgn_input' already exists. New games will be appended!${NC}"
+        print_header
+        echo -e "${GREEN}Tournament started:${NC}"
+        echo -e "  Number of Engines: $num_engines"
+        echo -e "  Time Control: $((time_control/1000))s + $((time_inc))ms"
+        echo -e "  Rounds: $rounds"
+        echo -e "  Total Games: $total_games"
         echo ""
-    else
-        touch "$pgn"
-    fi
 
-    local game_num=1
-    for ((r=0; r<rounds; r++)); do
-        for ((i=0; i<num_engines; i++)); do
-            for ((j=i+1; j<num_engines; j++)); do
-                local e1_name="${engines[$i]}"
-                local e2_name="${engines[$j]}"
-                local e1="engines/$e1_name"
-                local e2="engines/$e2_name"
+        # pgn is defined dynamically above
+        local logfile="./mattmagie.log"
+        local event="Suprah-Tournament"
+        local site="local"
+        local logging="log_on"
+        local debuging="debug_on"
 
-                echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
-                $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
-                tail -n 12 "$pgn"
-                echo ""
-                game_num=$((game_num+1))
+        # If the PGN file already exists, notify the user and append to it. Otherwise, create it empty.
+        if [[ -f "$pgn" ]]; then
+            echo -e "${YELLOW}Note: PGN file '$pgn_input' already exists. New games will be appended!${NC}"
+            echo ""
+        else
+            touch "$pgn"
+        fi
 
-                echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
-                $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
-                tail -n 12 "$pgn"
-                echo ""
-                game_num=$((game_num+1))
+        local game_num=1
+        for ((r=0; r<rounds; r++)); do
+            for ((i=0; i<num_engines; i++)); do
+                for ((j=i+1; j<num_engines; j++)); do
+                    local e1_name="${engines[$i]}"
+                    local e2_name="${engines[$j]}"
+                    local e1="engines/$e1_name"
+                    local e2="engines/$e2_name"
 
-                sleep 1
+                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
+                    $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
+                    tail -n 12 "$pgn"
+                    echo ""
+                    game_num=$((game_num+1))
+
+                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
+                    $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
+                    tail -n 12 "$pgn"
+                    echo ""
+                    game_num=$((game_num+1))
+
+                    sleep 1
+                done
             done
         done
-    done
 
-    echo -e "${GREEN}Tournament finished! Here is the final scoreboard:${NC}"
-    if [ -f "./summary.sh" ]; then
-        ./summary.sh "$pgn"
-    else
-        echo "No summary.sh found."
-    fi
-    echo ""
-    read -p "Press Enter to continue..." temp
+        echo -e "${GREEN}Tournament finished! Here is the final scoreboard:${NC}"
+        if [ -f "./summary.sh" ]; then
+            ./summary.sh "$pgn"
+        else
+            echo "No summary.sh found."
+        fi
+        echo ""
+
+        # Post-tournament replay choice
+        echo -e "What would you like to do?"
+        echo -e "  [${CYAN}1${NC}] Replay tournament with the same settings (same engines and time controls)"
+        echo -e "  [${CYAN}2${NC}] Finish tournament and return to main menu"
+        echo ""
+
+        local replay_choice=""
+        while true; do
+            read -p "Choice [1-2]: " replay_choice
+            if [[ "$replay_choice" == "1" || "$replay_choice" == "2" ]]; then
+                break
+            fi
+            echo -e "${RED}Invalid choice, please select 1-2.${NC}"
+        done
+
+        if [[ "$replay_choice" == "2" ]]; then
+            break
+        fi
+
+        # User wants to replay, prompt for rounds (default is previous rounds)
+        echo ""
+        read -p "Number of rounds (each pair plays both White and Black per round) [Default: $rounds]: " rounds_input
+        if [[ ! -z "$rounds_input" ]]; then
+            if [[ "$rounds_input" =~ ^[0-9]+$ && "$rounds_input" -ge 1 ]]; then
+                rounds="$rounds_input"
+            else
+                echo -e "${YELLOW}Invalid rounds input. Keeping previous value of $rounds.${NC}"
+                sleep 1.5
+            fi
+        fi
+    done
 }
 
 # Main Menu Loop
