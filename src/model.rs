@@ -42,6 +42,7 @@ impl UciGame {
         }
     }
 
+    #[allow(dead_code)]
     pub fn white_to_move(&self) -> bool  {
         self.board.white_to_move
     }
@@ -89,6 +90,7 @@ impl Turn {
     }
 
     // Constructor with only 'from' and 'to' fields
+    #[allow(dead_code)]
     pub fn from_to(from: i32, to: i32) -> Self {
         Turn {
             from,
@@ -106,11 +108,13 @@ impl Turn {
     }
 
     // Set promotion with fluent interface
+    #[allow(dead_code)]
     pub fn set_promotion(mut self, promotion: i32) -> Self {
         self.promotion = promotion;
         self
     }
 
+    #[allow(dead_code)]
     pub fn to_algebraic(&self) -> String {
         let column_from = (self.from % 10 + 96) as u8;
         let row_from = (10 - (self.from / 10) + 48) as u8;
@@ -158,6 +162,7 @@ pub struct CastleInformation {
 
 impl CastleInformation {
     // Constructor
+    #[allow(dead_code)]
     pub fn new(white_possible_to_castle_long: bool, white_possible_to_castle_short: bool,
                black_possible_to_castle_long: bool, black_possible_to_castle_short: bool) -> Self {
         CastleInformation {
@@ -209,7 +214,7 @@ impl Board {
             move_count,
             game_status: GameStatus::Normal,
             move_repetition_map: HashMap::new(),
-            zobrist: ZobristTable::new(),
+            zobrist,
         }
     }
 

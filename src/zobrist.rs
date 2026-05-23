@@ -7,6 +7,7 @@ const BOARD_SIZE: usize = 120;
 const NUM_PIECES: usize = 12;
 const FIG: [usize; 12] = [10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25];
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ZobristTable {
     table: [[u64; NUM_PIECES]; BOARD_SIZE],
@@ -16,6 +17,7 @@ pub struct ZobristTable {
     entries: u32,
 }
 
+#[allow(dead_code)]
 impl ZobristTable {
     pub(crate) fn new() -> Self {
 

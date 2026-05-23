@@ -53,6 +53,7 @@ impl NotationUtil {
     }
 
     /// Finds a specific move in the move list based on the notation.
+    #[allow(dead_code)]
     pub fn get_turn_from_list(move_list: &Vec<Turn>, notation: &str) -> Turn {
         let mut target_turn = NotationUtil::get_turn_from_notation(notation);
 
