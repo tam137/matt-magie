@@ -12,7 +12,7 @@ Cargo.lock
 buildVersions/
 engines/
 mattmagie.log
-suprah_games.pgn
+games.pgn
 .mattmagie.log.swp
 mattmagie.log.backup
 pgns/

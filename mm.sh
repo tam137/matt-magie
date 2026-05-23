@@ -176,7 +176,7 @@ run_single_match() {
     echo -e "  Rounds: $rounds (Total games: $((rounds*2)))"
     echo ""
 
-    local pgn="./suprah_games.pgn"
+    local pgn="./games.pgn"
     local logfile="./mattmagie.log"
     local event="Suprah-Single-Match"
     local site="local"
