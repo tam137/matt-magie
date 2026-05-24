@@ -1,32 +1,111 @@
-# Matt-Magie v1.3 - Chess Engine Matchup Manager
+# Matt-Magie v1.4.0 - Chess Engine Matchup Manager
 
-Matt-Magie is a lightweight, high-performance matchup manager written in Rust. It facilitates games between chess engines using the standard Universal Chess Interface (UCI) protocol, records games in PGN format, and displays beautiful, unwrapped, sequentially calculated Elo scoreboards.
+Matt-Magie is a lightweight, high-performance matchup manager written in Rust. It coordinates games between chess engines using the standard Universal Chess Interface (UCI) protocol, records matches in PGN format, and displays beautiful, console-optimized, sequentially calculated Elo scoreboards.
 
 ---
 
-## 🛠️ Main Interface: The CLI Wrapper
+## 🛠️ Main Interface: The CLI Wrapper (`mm.sh`)
 
-The easiest and most interactive way to use Matt-Magie is through the `mm.sh` bash script in the root directory. 
+The most interactive and convenient way to use Matt-Magie is through the `mm.sh` bash script located in the root directory. 
 
-To run the interactive CLI:
+### 1. Interactive CLI Mode
+To launch the interactive, guided terminal menu:
 ```bash
 ./mm.sh
 ```
 
-### Features of the Interactive CLI:
-1. **Single Match (1 vs 1)**: Configure a head-to-head match between two engine versions, swap colors automatically, and set time controls.
-2. **Tournament Mode (Round-Robin)**: 
-   - Select a subset of participating engines.
-   - Set a mandatory, validated PGN output filename.
-   - Plays a complete all-vs-all double round-robin tournament.
-3. **Import Engines**: Dynamically import/update compiled chess engine versions (like `suprah`) directly from your workspace into the `engines/` directory.
-4. **View PGN Statistics**: Instantly parse any tournament or match PGN to view sequential Elo ratings calibrated at 1500 ($K=32$) in a beautifully formatted, unwrapped scoreboard.
+#### Features of the Interactive CLI:
+* **Single Match (1 vs 1)**: Configure a head-to-head match between two engine versions, set custom time controls with increment, specify the number of rounds, and let the manager automatically swap colors every game.
+* **Tournament Mode (Round-Robin)**: 
+  * Select a subset or all participating engines from your local pool.
+  * Enter a custom PGN output filename.
+  * Execute a complete double round-robin all-vs-all tournament.
+* **Import/Update Engines**: Dynamically import/update compiled chess engine versions (like `suprah`) directly from your local workspace into the `engines/` directory with correct tags.
+* **View PGN Statistics**: Instantly parse any local PGN file to view sequential Elo ratings calibrated at 1500 ($K=32$) in a beautifully formatted, unwrapped scoreboard.
+
+### 2. Non-Interactive Tournament Mode (`-t`)
+You can run tournaments fully non-interactively using a `.trn` configuration file. This is perfect for background runs, remote server executions, or headless environments.
+
+To execute a tournament file:
+```bash
+./mm.sh -t path/to/tournament.trn
+```
+
+#### `.trn` File Format Example:
+```ini
+# Lines starting with '#' are treated as comments and ignored
+engines = suprah-0.7.8, suprah-0.7.9, mewel_V0.3.5.sh
+
+# Time control per game in milliseconds (e.g., 30000 ms = 30s)
+time_control = 30000
+
+# Increment per move in milliseconds (e.g., 1000 ms = 1s)
+increment = 1000
+
+# Number of rounds (each engine pair plays both White and Black per round)
+rounds = 2
+
+# PGN output filename (will automatically append .pgn if missing)
+pgn = my_tournament.pgn
+```
+
+#### Parameter Details:
+* **`engines`**: Comma-separated list of engine filenames. These binaries **must** be stored inside the `engines/` directory and be executable.
+* **`time_control`**: Base time per engine in milliseconds.
+* **`increment`**: Time increment in milliseconds added after each move.
+* **`rounds`**: Number of rounds (each engine plays every other engine twice per round—once as White, once as Black).
+* **`pgn`**: Target PGN output filename. If the file already exists, new games will be appended.
+
+---
+
+## 🔌 UCI Protocol Support & Engine Compatibility
+
+Matt-Magie acts as a matchup coordinator and is compatible with **any chess engine** that complies with the standard **Universal Chess Interface (UCI)** protocol. 
+
+The matchup manager orchestrates games by executing the following standard UCI commands:
+1. **Handshake**: Sends `uci` and expects the engine to respond with `uciok`.
+2. **Readiness Check**: Sends `isready` and expects the engine to respond with `readyok`.
+3. **New Game Setup**: Sends `ucinewgame` before every new game.
+4. **Position Transmission**: Sends `position startpos moves <move_list>` after each played move to synchronize the internal board state with the engine.
+5. **Search Command**: Sends time-controlled search instructions:
+   `go wtime <white_time> btime <black_time> winc <white_increment> binc <black_increment>`
+   It then parses the engine's output to read `bestmove <move>` and plays it on the internal manager board.
+6. **Termination**: Sends `quit` to cleanly terminate the engine processes when a game is finished.
+
+> [!WARNING]
+> **Host Architecture Compatibility**: Since Matt-Magie spawns chess engines as native subprocesses, all binaries in the `engines/` directory must be compiled for and compatible with the target host architecture (e.g., `x86_64` or `aarch64/ARM`) where the manager is running.
+
+---
+
+## 🚀 Remote Server Deployment & Headless Execution (Optional)
+
+For running long-running matches or massive tournaments on a remote server, Matt-Magie includes a deployment workflow.
+
+### 1. Deploying to a Server
+You can deploy your local project codebase and automatically compile the matchup manager natively on a remote server using the environment variable `REMOTE_SERVER_IP` and the provided `./deploy.sh` script:
+
+```bash
+export REMOTE_SERVER_IP="<your_server_ip>"
+./deploy.sh
+```
+*This script uploads the source code and natively compiles the Rust binary on the server to prevent any host architecture compilation issues (e.g., Exec format errors).*
+
+### 2. Headless/Background Execution (No-Hang-Up)
+To run a tournament in the background and log out of your SSH session safely without terminating the games:
+
+```bash
+nohup ./mm.sh -t tournament.trn > tournament.log 2>&1 &
+```
+All console progress and final scoreboards will be redirected and saved inside `tournament.log`. You can monitor it live with:
+```bash
+tail -f tournament.log
+```
 
 ---
 
 ## ⚙️ Direct Binary Execution
 
-If you prefer to run the matchup manager programmatically or from other scripts, you can build and invoke the compiled native binary directly:
+If you prefer to run the matchup coordinator programmatically or via custom automation, you can invoke the compiled native binary directly:
 
 ### 1. Compile the Release Binary
 ```bash
@@ -63,7 +142,7 @@ The compiled binary (`./target/release/Matt-Magie`) expects exactly 11 arguments
 
 ---
 
-## 📊 Beautiful Scoreboards & ELO Evaluation
+## 📊 Scoreboards & ELO Evaluation
 
 All game outcomes are parsed and analyzed sequentially using `summary.sh` (which delegates to `summary.py`):
 
@@ -78,9 +157,8 @@ This generates a gorgeous, console-optimized scoreboard anchored at 1500:
 ======================================================================
 Rank Engine Name               Games W/D/L     Points Score% Elo   Elo+/-
 ----------------------------------------------------------------------
-1    Rust-In-Pieces V0.2.2     4     3/1/0     3.5    87.5   1544  +44
-2    Rust-In-Pieces V0.2.6     4     1/1/2     1.5    37.5   1486  -14
-3    Rust-In-Pieces V0.3.0     4     0/2/2     1.0    25.0   1471  -29
+1    Rust-In-Pieces V0.7.9     2     2/0/0     2.0    100.0  1531  +31
+2    Rust-In-Pieces V0.7.8     2     0/0/2     0.0    0.0    1469  -31
 ======================================================================
 Note: Elo starts at 1500 and updates sequentially per game.
 ======================================================================

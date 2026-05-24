@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Configuration
-if [ -z "$EODSERVERIP" ]; then
-    echo -e "${RED}Error: Environment variable EODSERVERIP is not set.${NC}"
-    echo -e "Please set it before running this script (e.g. export EODSERVERIP=\"135.181.27.105\")."
+if [ -z "$REMOTE_SERVER_IP" ]; then
+    echo -e "${RED}Error: Environment variable REMOTE_SERVER_IP is not set.${NC}"
+    echo -e "Please set it before running this script (e.g. export REMOTE_SERVER_IP=\"135.181.27.105\")."
     exit 1
 fi
-SERVER="$EODSERVERIP"
+SERVER="$REMOTE_SERVER_IP"
 REMOTE_USER="root"
 REMOTE_DIR="/root/mattmagie"
 

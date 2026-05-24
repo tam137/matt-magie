@@ -48,7 +48,7 @@ print_header() {
     echo -e "${CYAN}   / /  / / /_/ / /_/ /_ /_____/ /  / / /_/ / /_/ / / / /_/ /   ${NC}"
     echo -e "${CYAN}  /_/  /_/\\__,_/\\__/\\__/      /_/  /_/\\__,_/\\__, /_/_/\\____/    ${NC}"
     echo -e "${CYAN}                                           /____/               ${NC}"
-    echo -e "${CYAN}                  SUPRAH CHESS ENGINE MATCHUP MANAGER           ${NC}"
+    echo -e "${CYAN}               SUPRAH CHESS ENGINE MATCHUP MANAGER v1.4.0       ${NC}"
     echo -e "${CYAN}================================================================${NC}"
     echo ""
 }
@@ -585,9 +585,9 @@ while true; do
     echo -e "  [${CYAN}2${NC}] Tournament (Round-Robin All-vs-All)"
     echo -e "  [${CYAN}3${NC}] Import / Update New Suprah Version"
     echo -e "  [${CYAN}4${NC}] View Current PGN Statistics"
-    echo -e "  [${CYAN}5${NC}] Exit"
+    echo -e "  [${CYAN}9${NC}] Exit"
     echo ""
-    read -p "Choice [1-5]: " choice
+    read -p "Choice [1-4, 9]: " choice
     case $choice in
         1)
             run_single_match
@@ -625,12 +625,12 @@ while true; do
             echo ""
             read -p "Press Enter to continue..." temp
             ;;
-        5)
+        9)
             echo -e "${GREEN}Goodbye! Good luck with Suprah!${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}Invalid choice, please select 1-5.${NC}"
+            echo -e "${RED}Invalid choice, please select 1-4 or 9.${NC}"
             sleep 1.5
             ;;
     esac
