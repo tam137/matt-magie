@@ -1,0 +1,14 @@
+# Matt-Magie Test Tournament Configuration
+engines = suprah-0.7.8, suprah-0.7.9
+
+# Time control in ms (e.g. 500 ms = 0.5s per game for quick validation)
+time_control = 500
+
+# Increment in ms
+increment = 100
+
+# Number of rounds
+rounds = 1
+
+# PGN output filename
+pgn = test_cli_tourney.pgn

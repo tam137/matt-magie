@@ -216,7 +216,217 @@ run_single_match() {
     read -p "Press Enter to continue..." temp
 }
 
-# Run Tournament
+# Execute Tournament Games (Non-interactive & Interactive backend)
+execute_tournament_games() {
+    local engines_str="$1"
+    local time_control="$2"
+    local time_inc="$3"
+    local rounds="$4"
+    local pgn="$5"
+
+    # Convert comma-separated string back to array
+    local OLD_IFS="$IFS"
+    IFS=',' read -r -a engines <<< "$engines_str"
+    IFS="$OLD_IFS"
+
+    local num_engines=${#engines[@]}
+    local match_pairs=$((num_engines * (num_engines - 1) / 2))
+    local total_games=$((match_pairs * 2 * rounds))
+
+    print_header
+    echo -e "${GREEN}Tournament started:${NC}"
+    echo -e "  Number of Engines: $num_engines"
+    echo -e "  Time Control: $((time_control/1000))s + $((time_inc))ms"
+    echo -e "  Rounds: $rounds"
+    echo -e "  Total Games: $total_games"
+    echo ""
+
+    local logfile="./mattmagie.log"
+    local event="Suprah-Tournament"
+    local site="local"
+    local logging="log_on"
+    local debuging="debug_on"
+
+    if [[ -f "$pgn" ]]; then
+        echo -e "${YELLOW}Note: PGN file '$(basename "$pgn")' already exists. New games will be appended!${NC}"
+        echo ""
+    else
+        touch "$pgn"
+    fi
+
+    local game_num=1
+    for ((r=0; r<rounds; r++)); do
+        for ((i=0; i<num_engines; i++)); do
+            for ((j=i+1; j<num_engines; j++)); do
+                local e1_name="${engines[$i]}"
+                local e2_name="${engines[$j]}"
+                local e1="engines/$e1_name"
+                local e2="engines/$e2_name"
+
+                echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
+                $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
+                tail -n 12 "$pgn"
+                echo ""
+                game_num=$((game_num+1))
+
+                echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
+                $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
+                tail -n 12 "$pgn"
+                echo ""
+                game_num=$((game_num+1))
+
+                sleep 1
+            done
+        done
+    done
+
+    echo -e "${GREEN}Tournament finished! Here is the final scoreboard:${NC}"
+    if [ -f "./summary.sh" ]; then
+        ./summary.sh "$pgn"
+    else
+        echo "No summary.sh found."
+    fi
+    echo ""
+}
+
+# Run Tournament from configuration file (.trn)
+run_file_tournament() {
+    local trn_file="$1"
+
+    if [[ ! -f "$trn_file" ]]; then
+        echo -e "${RED}Error: Tournament file '$trn_file' not found!${NC}"
+        exit 1
+    fi
+
+    # Read and parse key-value pairs
+    local engines_val=""
+    local tc_val=""
+    local inc_val=""
+    local rounds_val=""
+    local pgn_val=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Strip comments starting with #
+        line="${line%%#*}"
+        # Trim leading/trailing whitespace
+        line=$(echo "$line" | xargs)
+        
+        # Skip empty lines
+        [[ -z "$line" ]] && continue
+
+        # Parse key = value
+        if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local val="${BASH_REMATCH[2]}"
+            
+            case "$key" in
+                engines)
+                    engines_val="$val"
+                    ;;
+                time_control)
+                    tc_val="$val"
+                    ;;
+                increment)
+                    inc_val="$val"
+                    ;;
+                rounds)
+                    rounds_val="$val"
+                    ;;
+                pgn)
+                    pgn_val="$val"
+                    ;;
+                *)
+                    echo -e "${YELLOW}Warning: Unknown key '$key' in tournament file.${NC}"
+                    ;;
+            esac
+        fi
+    done < "$trn_file"
+
+    # Validation
+    if [[ -z "$engines_val" ]]; then
+        echo -e "${RED}Error: 'engines' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+    if [[ -z "$tc_val" ]]; then
+        echo -e "${RED}Error: 'time_control' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+    if [[ -z "$inc_val" ]]; then
+        echo -e "${RED}Error: 'increment' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+    if [[ -z "$rounds_val" ]]; then
+        echo -e "${RED}Error: 'rounds' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+    if [[ -z "$pgn_val" ]]; then
+        echo -e "${RED}Error: 'pgn' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+
+    # Validate rounds (must be a positive integer)
+    if [[ ! "$rounds_val" =~ ^[0-9]+$ || "$rounds_val" -le 0 ]]; then
+        echo -e "${RED}Error: 'rounds' must be a positive integer, found '$rounds_val'!${NC}"
+        exit 1
+    fi
+
+    # Validate time_control (must be a non-negative integer)
+    if [[ ! "$tc_val" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Error: 'time_control' must be a non-negative integer, found '$tc_val'!${NC}"
+        exit 1
+    fi
+
+    # Validate increment (must be a non-negative integer)
+    if [[ ! "$inc_val" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Error: 'increment' must be a non-negative integer, found '$inc_val'!${NC}"
+        exit 1
+    fi
+
+    # Format engines list: remove whitespaces around commas and clean names
+    local engines=()
+    local OLD_IFS="$IFS"
+    IFS=','
+    for eng in $engines_val; do
+        eng=$(echo "$eng" | xargs)
+        if [[ -n "$eng" ]]; then
+            engines+=("$eng")
+        fi
+    done
+    IFS="$OLD_IFS"
+
+    if [ ${#engines[@]} -lt 2 ]; then
+        echo -e "${RED}Error: At least 2 engines must be specified, found only ${#engines[@]}!${NC}"
+        exit 1
+    fi
+
+    # Validate that all engines exist and are executable in engines/ directory
+    for eng in "${engines[@]}"; do
+        local path="engines/$eng"
+        if [[ ! -f "$path" ]]; then
+            echo -e "${RED}Error: Engine '$eng' not found at '$path'!${NC}"
+            exit 1
+        fi
+        if [[ ! -x "$path" ]]; then
+            echo -e "${RED}Error: Engine '$eng' at '$path' is not executable!${NC}"
+            exit 1
+        fi
+    done
+
+    # Parse PGN filename (append .pgn if missing)
+    if [[ "$pgn_val" != *.pgn ]]; then
+        pgn_val="${pgn_val}.pgn"
+    fi
+    local pgn_path="./$pgn_val"
+
+    # Re-create comma separated list of clean engine names
+    local engines_clean_str
+    engines_clean_str=$(IFS=,; echo "${engines[*]}")
+
+    # Run the tournament games
+    execute_tournament_games "$engines_clean_str" "$tc_val" "$inc_val" "$rounds_val" "$pgn_path"
+}
+
+# Run Tournament (Interactive configuration)
 run_tournament() {
     local all_engines=($(list_engines))
     if [ ${#all_engines[@]} -lt 2 ]; then
@@ -313,67 +523,10 @@ run_tournament() {
     done
 
     while true; do
-        # Calculate total games
-        local num_engines=${#engines[@]}
-        local match_pairs=$((num_engines * (num_engines - 1) / 2))
-        local total_games=$((match_pairs * 2 * rounds))
+        local engines_str
+        engines_str=$(IFS=,; echo "${engines[*]}")
 
-        print_header
-        echo -e "${GREEN}Tournament started:${NC}"
-        echo -e "  Number of Engines: $num_engines"
-        echo -e "  Time Control: $((time_control/1000))s + $((time_inc))ms"
-        echo -e "  Rounds: $rounds"
-        echo -e "  Total Games: $total_games"
-        echo ""
-
-        # pgn is defined dynamically above
-        local logfile="./mattmagie.log"
-        local event="Suprah-Tournament"
-        local site="local"
-        local logging="log_on"
-        local debuging="debug_on"
-
-        # If the PGN file already exists, notify the user and append to it. Otherwise, create it empty.
-        if [[ -f "$pgn" ]]; then
-            echo -e "${YELLOW}Note: PGN file '$pgn_input' already exists. New games will be appended!${NC}"
-            echo ""
-        else
-            touch "$pgn"
-        fi
-
-        local game_num=1
-        for ((r=0; r<rounds; r++)); do
-            for ((i=0; i<num_engines; i++)); do
-                for ((j=i+1; j<num_engines; j++)); do
-                    local e1_name="${engines[$i]}"
-                    local e2_name="${engines[$j]}"
-                    local e1="engines/$e1_name"
-                    local e2="engines/$e2_name"
-
-                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
-                    $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
-                    tail -n 12 "$pgn"
-                    echo ""
-                    game_num=$((game_num+1))
-
-                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
-                    $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging"
-                    tail -n 12 "$pgn"
-                    echo ""
-                    game_num=$((game_num+1))
-
-                    sleep 1
-                done
-            done
-        done
-
-        echo -e "${GREEN}Tournament finished! Here is the final scoreboard:${NC}"
-        if [ -f "./summary.sh" ]; then
-            ./summary.sh "$pgn"
-        else
-            echo "No summary.sh found."
-        fi
-        echo ""
+        execute_tournament_games "$engines_str" "$time_control" "$time_inc" "$rounds" "$pgn"
 
         # Post-tournament replay choice
         echo -e "What would you like to do?"
@@ -407,6 +560,22 @@ run_tournament() {
         fi
     done
 }
+
+# Check if command-line arguments are provided
+if [[ $# -gt 0 ]]; then
+    if [[ "$1" == "-t" ]]; then
+        if [[ -z "$2" ]]; then
+            echo -e "${RED}Error: Missing tournament file path! Usage: ./mm.sh -t <tournament_file.trn>${NC}"
+            exit 1
+        fi
+        run_file_tournament "$2"
+        exit 0
+    else
+        echo -e "${RED}Unknown option: $1${NC}"
+        echo -e "Usage: ./mm.sh [-t <tournament_file.trn>]"
+        exit 1
+    fi
+fi
 
 # Main Menu Loop
 while true; do
