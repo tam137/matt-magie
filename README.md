@@ -1,4 +1,4 @@
-# Matt-Magie v1.4.0 - Chess Engine Matchup Manager
+# Matt-Magie v1.4.1 - Chess Engine Matchup Manager
 
 Matt-Magie is a lightweight, high-performance matchup manager written in Rust. It coordinates games between chess engines using the standard Universal Chess Interface (UCI) protocol, records matches in PGN format, and displays beautiful, console-optimized, sequentially calculated Elo scoreboards.
 
@@ -47,6 +47,10 @@ rounds = 2
 
 # PGN output filename (will automatically append .pgn if missing)
 pgn = my_tournament.pgn
+
+# Engine configuration options sent via setoption name <Key> value <Value>
+# comma-separated key-value pairs (optional)
+engine_options = Hash=128, Threads=1
 ```
 
 #### Parameter Details:
@@ -55,6 +59,7 @@ pgn = my_tournament.pgn
 * **`increment`**: Time increment in milliseconds added after each move.
 * **`rounds`**: Number of rounds (each engine plays every other engine twice per round—once as White, once as Black).
 * **`pgn`**: Target PGN output filename. If the file already exists, new games will be appended.
+* **`engine_options`**: (Optional) Comma-separated engine settings sent immediately after handshake (e.g. `Hash=128, Threads=1`).
 
 ---
 
@@ -64,13 +69,14 @@ Matt-Magie acts as a matchup coordinator and is compatible with **any chess engi
 
 The matchup manager orchestrates games by executing the following standard UCI commands:
 1. **Handshake**: Sends `uci` and expects the engine to respond with `uciok`.
-2. **Readiness Check**: Sends `isready` and expects the engine to respond with `readyok`.
-3. **New Game Setup**: Sends `ucinewgame` before every new game.
-4. **Position Transmission**: Sends `position startpos moves <move_list>` after each played move to synchronize the internal board state with the engine.
-5. **Search Command**: Sends time-controlled search instructions:
+2. **Options Configuration**: Sends `setoption name <Name> value <Value>` for each custom engine option right after receiving `uciok` (e.g. configuring `Hash` or `Threads`).
+3. **Readiness Check**: Sends `isready` and expects the engine to respond with `readyok`.
+4. **New Game Setup**: Sends `ucinewgame` before every new game.
+5. **Position Transmission**: Sends `position startpos moves <move_list>` after each played move to synchronize the internal board state with the engine.
+6. **Search Command**: Sends time-controlled search instructions:
    `go wtime <white_time> btime <black_time> winc <white_increment> binc <black_increment>`
    It then parses the engine's output to read `bestmove <move>` and plays it on the internal manager board.
-6. **Termination**: Sends `quit` to cleanly terminate the engine processes when a game is finished.
+7. **Interruption & Clean Termination**: Sends `stop` to halt any active search when a game is over or times out, followed by `quit` to cleanly terminate the engine processes.
 
 > [!WARNING]
 > **Host Architecture Compatibility**: Since Matt-Magie spawns chess engines as native subprocesses, all binaries in the `engines/` directory must be compiled for and compatible with the target host architecture (e.g., `x86_64` or `aarch64/ARM`) where the manager is running.
@@ -113,7 +119,7 @@ cargo build --release
 ```
 
 ### 2. Run a Match
-The compiled binary (`./target/release/Matt-Magie`) expects exactly 11 arguments:
+The compiled binary (`./target/release/Matt-Magie`) expects 11 standard arguments, with an optional 12th argument for custom engine settings:
 
 ```bash
 ./target/release/Matt-Magie \
@@ -127,7 +133,8 @@ The compiled binary (`./target/release/Matt-Magie`) expects exactly 11 arguments
   "<time_per_game_ms>" \
   "<increment_per_move_ms>" \
   "<logging_flag>" \
-  "<debugging_flag>"
+  "<debugging_flag>" \
+  "[engine_options]"
 ```
 
 ### Argument Details:
@@ -139,6 +146,7 @@ The compiled binary (`./target/release/Matt-Magie`) expects exactly 11 arguments
 * **`increment_per_move_ms`**: Time increment added to the clock per move in milliseconds (e.g., `1000` for 1 second).
 * **`logging_flag`**: Use `log_on` to write engine-to-manager UCI logs.
 * **`debugging_flag`**: Use `debug_on` to pass UCI debug commands to engines.
+* **`engine_options`**: (Optional) Comma-separated engine settings sent via UCI `setoption` immediately after handshake (e.g., `"Hash=128,Threads=1"`).
 
 ---
 

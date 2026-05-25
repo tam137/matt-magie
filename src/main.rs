@@ -47,8 +47,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let round = args.get(7).expect("MM pgn round not defined").to_string();
     let time_per_game = args.get(8).expect("MM pgn time per game not defined").to_string();
     let inc_per_move_in_ms = args.get(9).expect("MM Inc per move not defined").to_string();
-    let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
-    let debug_on: bool = if args.get(10).expect("MM log_on not defined") == ("debug_on") { true } else { false };
+    let log_on: bool = if args.get(10).cloned().unwrap_or_default() == "log_on" { true } else { false };
+    let debug_on: bool = if args.get(11).cloned().unwrap_or_default() == "debug_on" { true } else { false };
+    let engine_options: String = args.get(12).cloned().unwrap_or_default();
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -243,6 +244,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         
                 match msg {
                     "uciok" => {
+                        if !engine_options.is_empty() {
+                            for opt in engine_options.split(',') {
+                                if let Some((name, val)) = parse_option(opt) {
+                                    send(current_engine_process, &format!("setoption name {} value {}", name, val), &logfile);
+                                }
+                            }
+                        }
                         if debug_on {
                             send(current_engine_process, "debug on", &logfile);
                         }
@@ -319,12 +327,50 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    //send(&mut engine_process_0, "stop", &logfile);
-    //send(&mut engine_process_1, "stop", &logfile);
+    send(&mut engine_process_0, "stop", &logfile);
+    send(&mut engine_process_1, "stop", &logfile);
     send(&mut engine_process_0, "quit", &logfile);
     send(&mut engine_process_1, "quit", &logfile);
     log("finished Matt Magie", &logfile);
     std::process::exit(0);
+}
+
+fn parse_option(opt: &str) -> Option<(String, String)> {
+    let opt = opt.trim();
+    if opt.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = if opt.contains('=') {
+        opt.splitn(2, '=').collect()
+    } else if opt.contains(':') {
+        opt.splitn(2, ':').collect()
+    } else {
+        return None;
+    };
+
+    if parts.len() == 2 {
+        let name = parts[0].trim().to_string();
+        let value = parts[1].trim().to_string();
+        if !name.is_empty() && !value.is_empty() {
+            return Some((name, value));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_option() {
+        assert_eq!(parse_option("Hash=128"), Some(("Hash".to_string(), "128".to_string())));
+        assert_eq!(parse_option("Threads:4"), Some(("Threads".to_string(), "4".to_string())));
+        assert_eq!(parse_option("  Ponder  =  true  "), Some(("Ponder".to_string(), "true".to_string())));
+        assert_eq!(parse_option("InvalidOption"), None);
+        assert_eq!(parse_option("="), None);
+        assert_eq!(parse_option(""), None);
+    }
 }
 
 

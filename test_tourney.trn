@@ -12,3 +12,6 @@ rounds = 1
 
 # PGN output filename
 pgn = test_cli_tourney.pgn
+
+# Engine configuration options
+engine_options = Hash=32, Threads=1
