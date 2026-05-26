@@ -1,4 +1,4 @@
-# Matt-Magie v1.4.1 - Chess Engine Matchup Manager
+# Matt-Magie v1.4.2 - Chess Engine Matchup Manager
 
 Matt-Magie is a lightweight, high-performance matchup manager written in Rust. It coordinates games between chess engines using the standard Universal Chess Interface (UCI) protocol, records matches in PGN format, and displays beautiful, console-optimized, sequentially calculated Elo scoreboards.
 
@@ -16,10 +16,9 @@ To launch the interactive, guided terminal menu:
 
 #### Features of the Interactive CLI:
 * **Single Match (1 vs 1)**: Configure a head-to-head match between two engine versions, set custom time controls with increment, specify the number of rounds, and let the manager automatically swap colors every game.
-* **Tournament Mode (Round-Robin)**: 
-  * Select a subset or all participating engines from your local pool.
-  * Enter a custom PGN output filename.
-  * Execute a complete double round-robin all-vs-all tournament.
+* **Tournament Modes**: 
+  * **Round-Robin (All-vs-All)**: Select a subset or all participating engines from your local pool and execute a complete double round-robin all-vs-all tournament.
+  * **Gauntlet (Challenger vs Rest)**: Put the first selected engine to the test against all other participating engines (playing both White and Black against each). Generates an exclusive, beautiful head-to-head scoreboard summary of the challenger's performance.
 * **Import/Update Engines**: Dynamically import/update compiled chess engine versions (like `suprah`) directly from your local workspace into the `engines/` directory with correct tags.
 * **View PGN Statistics**: Instantly parse any local PGN file to view sequential Elo ratings calibrated at 1500 ($K=32$) in a beautifully formatted, unwrapped scoreboard.
 
@@ -48,6 +47,9 @@ rounds = 2
 # PGN output filename (will automatically append .pgn if missing)
 pgn = my_tournament.pgn
 
+# Tournament mode: 'round_robin' (All-vs-All) or 'gauntlet' (Engine 1 vs All) (optional, default: round_robin)
+mode = gauntlet
+
 # Engine configuration options sent via setoption name <Key> value <Value>
 # comma-separated key-value pairs (optional)
 engine_options = Hash=128, Threads=1
@@ -57,9 +59,10 @@ engine_options = Hash=128, Threads=1
 * **`engines`**: Comma-separated list of engine filenames. These binaries **must** be stored inside the `engines/` directory and be executable.
 * **`time_control`**: Base time per engine in milliseconds.
 * **`increment`**: Time increment in milliseconds added after each move.
-* **`rounds`**: Number of rounds (each engine plays every other engine twice per round—once as White, once as Black).
+* **`rounds`**: Number of rounds (each engine plays every other engine twice per round—once as White, once as Black—or in Gauntlet mode, the challenger plays each opponent twice per round).
 * **`pgn`**: Target PGN output filename. If the file already exists, new games will be appended.
 * **`engine_options`**: (Optional) Comma-separated engine settings sent immediately after handshake (e.g. `Hash=128, Threads=1`).
+* **`mode`**: (Optional) Tournament format. Choose `round_robin` (default) for all-vs-all, or `gauntlet` for a challenger setup where the first engine listed in `engines` plays against all other engines (once as White and once as Black per opponent, per round).
 
 ---
 

@@ -1,0 +1,8 @@
+# Gauntlet Test Tournament Configuration
+engines = suprah-0.9.3, suprah-0.9.2, suprah-0.9.1
+time_control = 100
+increment = 10
+rounds = 1
+pgn = test_gauntlet.pgn
+mode = gauntlet
+engine_options = Hash=16, Threads=1

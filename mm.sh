@@ -48,7 +48,7 @@ print_header() {
     echo -e "${CYAN}   / /  / / /_/ / /_/ /_ /_____/ /  / / /_/ / /_/ / / / /_/ /   ${NC}"
     echo -e "${CYAN}  /_/  /_/\\__,_/\\__/\\__/      /_/  /_/\\__,_/\\__, /_/_/\\____/    ${NC}"
     echo -e "${CYAN}                                           /____/               ${NC}"
-    echo -e "${CYAN}               SUPRAH CHESS ENGINE MATCHUP MANAGER v1.4.1       ${NC}"
+    echo -e "${CYAN}               SUPRAH CHESS ENGINE MATCHUP MANAGER v1.4.2       ${NC}"
     echo -e "${CYAN}================================================================${NC}"
     echo ""
 }
@@ -233,6 +233,7 @@ execute_tournament_games() {
     local rounds="$4"
     local pgn="$5"
     local engine_options="${6:-}"
+    local tournament_mode="${7:-round_robin}"
 
     # Convert comma-separated string back to array
     local OLD_IFS="$IFS"
@@ -240,7 +241,12 @@ execute_tournament_games() {
     IFS="$OLD_IFS"
 
     local num_engines=${#engines[@]}
-    local match_pairs=$((num_engines * (num_engines - 1) / 2))
+    local match_pairs=0
+    if [[ "$tournament_mode" == "gauntlet" ]]; then
+        match_pairs=$((num_engines - 1))
+    else
+        match_pairs=$((num_engines * (num_engines - 1) / 2))
+    fi
     local total_games=$((match_pairs * 2 * rounds))
 
     print_header
@@ -269,20 +275,20 @@ execute_tournament_games() {
 
     local game_num=1
     for ((r=0; r<rounds; r++)); do
-        for ((i=0; i<num_engines; i++)); do
-            for ((j=i+1; j<num_engines; j++)); do
-                local e1_name="${engines[$i]}"
-                local e2_name="${engines[$j]}"
-                local e1="engines/$e1_name"
-                local e2="engines/$e2_name"
+        if [[ "$tournament_mode" == "gauntlet" ]]; then
+            local challenger_name="${engines[0]}"
+            for ((j=1; j<num_engines; j++)); do
+                local opp_name="${engines[$j]}"
+                local e1="engines/$challenger_name"
+                local e2="engines/$opp_name"
 
-                echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
+                echo -e "${YELLOW}=== Game $game_num/$total_games: $challenger_name (White) vs $opp_name (Black) ===${NC}"
                 $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
                 tail -n 12 "$pgn"
                 echo ""
                 game_num=$((game_num+1))
 
-                echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
+                echo -e "${YELLOW}=== Game $game_num/$total_games: $opp_name (White) vs $challenger_name (Black) (Colors swapped) ===${NC}"
                 $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
                 tail -n 12 "$pgn"
                 echo ""
@@ -290,12 +296,39 @@ execute_tournament_games() {
 
                 sleep 1
             done
-        done
+        else
+            for ((i=0; i<num_engines; i++)); do
+                for ((j=i+1; j<num_engines; j++)); do
+                    local e1_name="${engines[$i]}"
+                    local e2_name="${engines[$j]}"
+                    local e1="engines/$e1_name"
+                    local e2="engines/$e2_name"
+
+                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
+                    $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
+                    tail -n 12 "$pgn"
+                    echo ""
+                    game_num=$((game_num+1))
+
+                    echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
+                    $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
+                    tail -n 12 "$pgn"
+                    echo ""
+                    game_num=$((game_num+1))
+
+                    sleep 1
+                done
+            done
+        fi
     done
 
     echo -e "${GREEN}Tournament finished! Here is the final scoreboard:${NC}"
     if [ -f "./summary.sh" ]; then
-        ./summary.sh "$pgn"
+        if [[ "$tournament_mode" == "gauntlet" ]]; then
+            ./summary.sh "$pgn" --gauntlet "${engines[0]}"
+        else
+            ./summary.sh "$pgn"
+        fi
     else
         echo "No summary.sh found."
     fi
@@ -318,6 +351,7 @@ run_file_tournament() {
     local rounds_val=""
     local pgn_val=""
     local options_val=""
+    local mode_val=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Strip comments starting with #
@@ -352,6 +386,9 @@ run_file_tournament() {
                 engine_options)
                     options_val="$val"
                     ;;
+                mode)
+                    mode_val="$val"
+                    ;;
                 *)
                     echo -e "${YELLOW}Warning: Unknown key '$key' in tournament file.${NC}"
                     ;;
@@ -378,6 +415,15 @@ run_file_tournament() {
     fi
     if [[ -z "$pgn_val" ]]; then
         echo -e "${RED}Error: 'pgn' is not specified or empty in '$trn_file'!${NC}"
+        exit 1
+    fi
+
+    # Set default tournament mode
+    if [[ -z "$mode_val" ]]; then
+        mode_val="round_robin"
+    fi
+    if [[ "$mode_val" != "round_robin" && "$mode_val" != "gauntlet" ]]; then
+        echo -e "${RED}Error: 'mode' must be either 'round_robin' or 'gauntlet', found '$mode_val'!${NC}"
         exit 1
     fi
 
@@ -440,7 +486,7 @@ run_file_tournament() {
     engines_clean_str=$(IFS=,; echo "${engines[*]}")
 
     # Run the tournament games
-    execute_tournament_games "$engines_clean_str" "$tc_val" "$inc_val" "$rounds_val" "$pgn_path" "$options_val"
+    execute_tournament_games "$engines_clean_str" "$tc_val" "$inc_val" "$rounds_val" "$pgn_path" "$options_val" "$mode_val"
 }
 
 # Run Tournament (Interactive configuration)
@@ -505,6 +551,31 @@ run_tournament() {
     done
     echo ""
 
+    # Tournament Mode Selection
+    local mode_val="round_robin"
+    echo -e "Select Tournament Mode:"
+    echo -e "  [${CYAN}1${NC}] Round-Robin (All-vs-All)"
+    echo -e "  [${CYAN}2${NC}] Gauntlet (Engine 1 plays against all others)"
+    echo ""
+    local mode_choice=""
+    while true; do
+        read -p "Choice [1-2] [Default: 1]: " mode_choice
+        if [[ -z "$mode_choice" || "$mode_choice" == "1" ]]; then
+            mode_val="round_robin"
+            break
+        elif [[ "$mode_choice" == "2" ]]; then
+            mode_val="gauntlet"
+            break
+        fi
+        echo -e "${RED}Invalid choice, please select 1 or 2.${NC}"
+    done
+    echo ""
+
+    if [[ "$mode_val" == "gauntlet" ]]; then
+        echo -e "${YELLOW}Gauntlet Mode Active: Engine '${engines[0]}' is the Challenger!${NC}"
+        echo ""
+    fi
+
     # Time Settings
     local time_control="30000"
     read -p "Time control per game in milliseconds [Default: 30000 ms = 30s]: " tc_input
@@ -549,7 +620,7 @@ run_tournament() {
         local engines_str
         engines_str=$(IFS=,; echo "${engines[*]}")
 
-        execute_tournament_games "$engines_str" "$time_control" "$time_inc" "$rounds" "$pgn" "$engine_options"
+        execute_tournament_games "$engines_str" "$time_control" "$time_inc" "$rounds" "$pgn" "$engine_options" "$mode_val"
 
         # Post-tournament replay choice
         echo -e "What would you like to do?"

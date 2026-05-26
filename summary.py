@@ -84,10 +84,14 @@ def compute_ratings_and_scores(games):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 summary.py <pgn_file>")
+        print("Usage: python3 summary.py <pgn_file> [--gauntlet <challenger_name>]")
         sys.exit(1)
         
     pgn_file = sys.argv[1]
+    gauntlet_challenger = None
+    if len(sys.argv) >= 4 and sys.argv[2] == "--gauntlet":
+        gauntlet_challenger = sys.argv[3]
+
     games = parse_pgn(pgn_file)
     
     if not games:
@@ -107,6 +111,91 @@ def main():
         print(f"Game {i:<2}: {w_disp:<25} vs {b_disp:<25}  -> {res}")
     print()
         
+    if gauntlet_challenger:
+        # Resolve challenger name to what's in the PGN file
+        engine_counts = defaultdict(int)
+        for game in games:
+            engine_counts[game['White'].strip()] += 1
+            engine_counts[game['Black'].strip()] += 1
+            
+        detected_challenger = max(engine_counts, key=engine_counts.get) if engine_counts else gauntlet_challenger
+        
+        # Check if the passed name exists exactly
+        if gauntlet_challenger.strip() not in engine_counts:
+            # Try fuzzy matching (substring or common numbers like version digits)
+            matched = None
+            # Extract digits/version numbers e.g. "0.9.3" from "suprah-0.9.3"
+            version_match = re.search(r'\d+\.\d+\.\d+', gauntlet_challenger)
+            version_str = version_match.group(0) if version_match else None
+            
+            for eng in engine_counts:
+                if version_str and version_str in eng:
+                    matched = eng
+                    break
+                # Try simple clean alphanumeric match
+                eng_clean = re.sub(r'[^a-zA-Z0-9]', '', eng.lower())
+                target_clean = re.sub(r'[^a-zA-Z0-9]', '', gauntlet_challenger.lower())
+                if target_clean in eng_clean or eng_clean in target_clean:
+                    matched = eng
+                    break
+            
+            if matched:
+                gauntlet_challenger = matched
+            else:
+                gauntlet_challenger = detected_challenger
+                
+        print("=" * 70)
+        print(" " * 19 + "GAUNTLET HEAD-TO-HEAD SUMMARY")
+        print("=" * 70)
+        print(f"Challenger: {gauntlet_challenger}")
+        print("-" * 70)
+        
+        total_wins = 0
+        total_draws = 0
+        total_losses = 0
+        h2h = defaultdict(lambda: {'wins': 0, 'draws': 0, 'losses': 0})
+        
+        for game in games:
+            w = game['White'].strip()
+            b = game['Black'].strip()
+            res = game['Result'].strip()
+            if res not in ("1-0", "0-1", "1/2-1/2"):
+                continue
+                
+            if w == gauntlet_challenger:
+                opp = b
+                if res == "1-0":
+                    h2h[opp]['wins'] += 1
+                    total_wins += 1
+                elif res == "0-1":
+                    h2h[opp]['losses'] += 1
+                    total_losses += 1
+                else:
+                    h2h[opp]['draws'] += 1
+                    total_draws += 1
+            elif b == gauntlet_challenger:
+                opp = w
+                if res == "0-1":
+                    h2h[opp]['wins'] += 1
+                    total_wins += 1
+                elif res == "1-0":
+                    h2h[opp]['losses'] += 1
+                    total_losses += 1
+                else:
+                    h2h[opp]['draws'] += 1
+                    total_draws += 1
+                    
+        for opp, st in sorted(h2h.items()):
+            w_d_l = f"{st['wins']}/{st['draws']}/{st['losses']}"
+            opp_disp = (opp[:30] + "..") if len(opp) > 32 else opp
+            print(f"vs {opp_disp:<32} {w_d_l:<9}")
+            
+        print("-" * 70)
+        total_wdl = f"{total_wins}/{total_draws}/{total_losses}"
+        print(f"{'TOTAL (W/D/L):':<35} {total_wdl:<9}")
+        print("=" * 70)
+        return
+
     stats, ratings = compute_ratings_and_scores(games)
     
     # Sort engines by points descending, then by Elo descending
