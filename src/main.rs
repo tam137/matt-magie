@@ -49,7 +49,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let inc_per_move_in_ms = args.get(9).expect("MM Inc per move not defined").to_string();
     let log_on: bool = if args.get(10).cloned().unwrap_or_default() == "log_on" { true } else { false };
     let debug_on: bool = if args.get(11).cloned().unwrap_or_default() == "debug_on" { true } else { false };
-    let engine_options: String = args.get(12).cloned().unwrap_or_default();
+    let engine_0_options: String = args.get(12).cloned().unwrap_or_default();
+    let engine_1_options: String = args.get(13).cloned().unwrap_or_default();
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -244,8 +245,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         
                 match msg {
                     "uciok" => {
-                        if !engine_options.is_empty() {
-                            for opt in engine_options.split(',') {
+                        let opts = if white { &engine_0_options } else { &engine_1_options };
+                        if !opts.is_empty() {
+                            for opt in opts.split(',') {
                                 if let Some((name, val)) = parse_option(opt) {
                                     send(current_engine_process, &format!("setoption name {} value {}", name, val), &logfile);
                                 }

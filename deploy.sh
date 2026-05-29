@@ -32,7 +32,7 @@ fi
 # 2. Upload source code, config files, and shell scripts
 echo -e "${YELLOW}Uploading source code, config files, and shell scripts...${NC}"
 # Upload Cargo files and scripts
-scp Cargo.toml mm.sh summary.sh summary.py ${REMOTE_USER}@${SERVER}:${REMOTE_DIR}/
+scp Cargo.toml mm.sh summary.sh summary.py *.trn ${REMOTE_USER}@${SERVER}:${REMOTE_DIR}/
 
 # Upload src folder recursively
 scp -r src ${REMOTE_USER}@${SERVER}:${REMOTE_DIR}/
