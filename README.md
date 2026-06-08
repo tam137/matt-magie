@@ -16,7 +16,7 @@ To launch the interactive, guided terminal menu:
 
 #### Features of the Interactive CLI:
 * **Single Match (1 vs 1)**: Configure a head-to-head match between two engine versions, set custom time controls with increment, specify the number of rounds, and let the manager automatically swap colors every game.
-* **Tournament Modes**: 
+* **Tournament Modes**: Both modes support parallel execution (concurrency) to leverage multi-core processors.
   * **Round-Robin (All-vs-All)**: Select a subset or all participating engines from your local pool and execute a complete double round-robin all-vs-all tournament.
   * **Gauntlet (Challenger vs Rest)**: Put the first selected engine to the test against all other participating engines (playing both White and Black against each). Generates an exclusive, beautiful head-to-head scoreboard summary of the challenger's performance.
 * **Import/Update Engines**: Dynamically import/update compiled chess engine versions (like `suprah`) directly from your local workspace into the `engines/` directory with correct tags.
@@ -50,6 +50,9 @@ pgn = my_tournament.pgn
 # Tournament mode: 'round_robin' (All-vs-All) or 'gauntlet' (Engine 1 vs All) (optional, default: round_robin)
 mode = gauntlet
 
+# Number of parallel games (concurrency) (optional, default: 1)
+concurrency = 2
+
 # Engine configuration options sent via setoption name <Key> value <Value>
 # comma-separated key-value pairs (optional)
 engine_options = Hash=128, Threads=1
@@ -63,6 +66,7 @@ engine_options = Hash=128, Threads=1
 * **`pgn`**: Target PGN output filename. If the file already exists, new games will be appended.
 * **`engine_options`**: (Optional) Comma-separated engine settings sent immediately after handshake (e.g. `Hash=128, Threads=1`).
 * **`mode`**: (Optional) Tournament format. Choose `round_robin` (default) for all-vs-all, or `gauntlet` for a challenger setup where the first engine listed in `engines` plays against all other engines (once as White and once as Black per opponent, per round).
+* **`concurrency`**: (Optional) Number of games to run in parallel. Default is `1`. Running multiple games simultaneously speeds up tournaments significantly. Note that each running game spawns two engine processes, so configure this based on your system's CPU cores and memory (e.g., total threads used = `2 * concurrency * Threads`).
 
 ---
 
@@ -155,10 +159,17 @@ The compiled binary (`./target/release/Matt-Magie`) expects 11 standard argument
 
 ## 📊 Scoreboards & ELO Evaluation
 
-All game outcomes are parsed and analyzed sequentially using `summary.sh` (which delegates to `summary.py`):
+All game outcomes are parsed and analyzed sequentially using `summary.sh` (which delegates to `summary.py`). By default, it prints only the scoreboard and ELO evaluation. Use the optional `-g` or `--games` switch to display the list of individual game results:
 
 ```bash
+# Print scoreboard only (default)
 ./summary.sh games.pgn
+
+# Print scoreboard AND individual game results
+./summary.sh games.pgn -g
+
+# Display command line help
+./summary.sh -h
 ```
 
 This generates a gorgeous, console-optimized scoreboard anchored at 1500:

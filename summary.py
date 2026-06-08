@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import re
+import argparse
 from collections import defaultdict
 
 def parse_pgn(file_path):
@@ -83,14 +84,19 @@ def compute_ratings_and_scores(games):
     return stats, ratings
 
 def main():
+    parser = argparse.ArgumentParser(description="Matt-Magie PGN Summary & Statistics Generator")
+    parser.add_argument("pgn_file", help="Path to the PGN file to analyze")
+    parser.add_argument("-g", "--games", action="store_true", help="Display the list of individual game results")
+    parser.add_argument("--gauntlet", help="Name of the challenger engine in Gauntlet mode")
+    
     if len(sys.argv) < 2:
-        print("Usage: python3 summary.py <pgn_file> [--gauntlet <challenger_name>]")
+        parser.print_help()
         sys.exit(1)
         
-    pgn_file = sys.argv[1]
-    gauntlet_challenger = None
-    if len(sys.argv) >= 4 and sys.argv[2] == "--gauntlet":
-        gauntlet_challenger = sys.argv[3]
+    args = parser.parse_args()
+    pgn_file = args.pgn_file
+    gauntlet_challenger = args.gauntlet
+    show_games = args.games
 
     games = parse_pgn(pgn_file)
     
@@ -98,18 +104,24 @@ def main():
         print(f"No games found in {pgn_file}.")
         sys.exit(0)
         
-    # Print individual results
-    print("=" * 70)
-    print(" " * 23 + "INDIVIDUAL GAME RESULTS")
-    print("=" * 70)
-    for i, game in enumerate(games, 1):
-        w = game['White']
-        b = game['Black']
-        res = game['Result']
-        w_disp = (w[:23] + "..") if len(w) > 25 else w
-        b_disp = (b[:23] + "..") if len(b) > 25 else b
-        print(f"Game {i:<2}: {w_disp:<25} vs {b_disp:<25}  -> {res}")
-    print()
+    try:
+        games.sort(key=lambda g: int(g.get('Round', '0')))
+    except Exception:
+        pass
+        
+    # Print individual results only if requested
+    if show_games:
+        print("=" * 70)
+        print(" " * 23 + "INDIVIDUAL GAME RESULTS")
+        print("=" * 70)
+        for i, game in enumerate(games, 1):
+            w = game['White']
+            b = game['Black']
+            res = game['Result']
+            w_disp = (w[:23] + "..") if len(w) > 25 else w
+            b_disp = (b[:23] + "..") if len(b) > 25 else b
+            print(f"Game {i:<2}: {w_disp:<25} vs {b_disp:<25}  -> {res}")
+        print()
         
     if gauntlet_challenger:
         # Resolve challenger name to what's in the PGN file

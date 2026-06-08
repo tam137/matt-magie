@@ -5,4 +5,5 @@ increment = 10
 rounds = 1
 pgn = test_gauntlet.pgn
 mode = gauntlet
+concurrency = 2
 engine_options = Hash=16, Threads=1
