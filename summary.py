@@ -28,7 +28,9 @@ def parse_pgn(file_path):
             games.append(tags)
     return games
 
-def compute_ratings_and_scores(games):
+import math
+
+def compute_ratings_and_scores(games, iterations=100):
     stats = defaultdict(lambda: {
         'games': 0,
         'wins': 0,
@@ -37,9 +39,8 @@ def compute_ratings_and_scores(games):
         'points': 0.0
     })
     
-    # Elo ratings anchored at 1500
-    ratings = defaultdict(lambda: 1500.0)
-    K = 32.0
+    w_matrix = defaultdict(lambda: defaultdict(float))
+    n_matrix = defaultdict(lambda: defaultdict(int))
     
     for game in games:
         w = game['White'].strip()
@@ -51,36 +52,58 @@ def compute_ratings_and_scores(games):
             
         stats[w]['games'] += 1
         stats[b]['games'] += 1
+        n_matrix[w][b] += 1
+        n_matrix[b][w] += 1
         
         if res == "1-0":
-            s_w, s_b = 1.0, 0.0
             stats[w]['wins'] += 1
             stats[b]['losses'] += 1
             stats[w]['points'] += 1.0
+            w_matrix[w][b] += 1.0
+            w_matrix[b][w] += 0.0
         elif res == "0-1":
-            s_w, s_b = 0.0, 1.0
             stats[w]['losses'] += 1
             stats[b]['wins'] += 1
             stats[b]['points'] += 1.0
+            w_matrix[w][b] += 0.0
+            w_matrix[b][w] += 1.0
         else: # "1/2-1/2"
-            s_w, s_b = 0.5, 0.5
             stats[w]['draws'] += 1
             stats[b]['draws'] += 1
             stats[w]['points'] += 0.5
             stats[b]['points'] += 0.5
+            w_matrix[w][b] += 0.5
+            w_matrix[b][w] += 0.5
+
+    # Bradley-Terry iterative model
+    engines = list(stats.keys())
+    gamma = {e: 1.0 for e in engines}
+    
+    for _ in range(iterations):
+        new_gamma = {}
+        for i in engines:
+            # Add virtual draws: 1 point out of 2 games against phantom player with gamma=1.0
+            W_i = stats[i]['points'] + 1.0
+            denominator = 2.0 / (gamma[i] + 1.0)
             
-        # Get current ratings
-        r_w = ratings[w]
-        r_b = ratings[b]
-        
-        # Expected scores
-        e_w = 1.0 / (1.0 + 10.0 ** ((r_b - r_w) / 400.0))
-        e_b = 1.0 / (1.0 + 10.0 ** ((r_w - r_b) / 400.0))
-        
-        # Update ratings
-        ratings[w] = r_w + K * (s_w - e_w)
-        ratings[b] = r_b + K * (s_b - e_b)
-        
+            for j in engines:
+                if i != j and n_matrix[i][j] > 0:
+                    denominator += n_matrix[i][j] / (gamma[i] + gamma[j])
+                    
+            new_gamma[i] = W_i / denominator if denominator > 0 else 1.0
+            
+        gamma = new_gamma
+
+    ratings = {}
+    for i in engines:
+        ratings[i] = 400.0 * math.log10(gamma[i]) if gamma[i] > 0 else -1000.0
+
+    if ratings:
+        avg_elo = sum(ratings.values()) / len(ratings)
+        shift = 2000.0 - avg_elo
+        for i in engines:
+            ratings[i] += shift
+            
     return stats, ratings
 
 def main():
@@ -88,6 +111,7 @@ def main():
     parser.add_argument("pgn_file", help="Path to the PGN file to analyze")
     parser.add_argument("-g", "--games", action="store_true", help="Display the list of individual game results")
     parser.add_argument("--gauntlet", help="Name of the challenger engine in Gauntlet mode")
+    parser.add_argument("-i", "--iterations", type=int, default=100, help="Number of iterations for iterative Elo calculation (default: 100)")
     
     if len(sys.argv) < 2:
         parser.print_help()
@@ -208,7 +232,7 @@ def main():
         print("=" * 70)
         return
 
-    stats, ratings = compute_ratings_and_scores(games)
+    stats, ratings = compute_ratings_and_scores(games, iterations=args.iterations)
     
     # Sort engines by points descending, then by Elo descending
     sorted_engines = sorted(
@@ -231,14 +255,14 @@ def main():
         pts = estats['points']
         pct = (pts / games_played * 100.0) if games_played > 0 else 0.0
         elo = round(ratings[engine])
-        elo_diff = elo - 1500
+        elo_diff = elo - 2000
         elo_diff_str = f"+{elo_diff}" if elo_diff >= 0 else f"{elo_diff}"
         engine_disp = (engine[:23] + "..") if len(engine) > 25 else engine
         
         print(f"{rank:<4} {engine_disp:<25} {games_played:<5} {w_d_l:<9} {pts:<6.1f} {pct:<6.1f} {elo:<5} {elo_diff_str:<6}")
         
     print("=" * 70)
-    print("Note: Elo starts at 1500 and updates sequentially per game.")
+    print("Note: Elo calculates via iterative Bradley-Terry, normalized to 2000 avg.")
     print("=" * 70)
 
 if __name__ == '__main__':
