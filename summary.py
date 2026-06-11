@@ -234,19 +234,19 @@ def main():
 
     stats, ratings = compute_ratings_and_scores(games, iterations=args.iterations)
     
-    # Sort engines by points descending, then by Elo descending
+    # Sort engines by Elo descending, then by points descending
     sorted_engines = sorted(
         stats.keys(),
-        key=lambda e: (stats[e]['points'], ratings[e]),
+        key=lambda e: (ratings[e], stats[e]['points']),
         reverse=True
     )
     
     # Print tournament scoreboard & ELO evaluation beautifully
-    print("=" * 70)
-    print(" " * 16 + "TOURNAMENT SCOREBOARD & ELO EVALUATION")
-    print("=" * 70)
-    print(f"{'Rank':<4} {'Engine Name':<25} {'Games':<5} {'W/D/L':<9} {'Points':<6} {'Score%':<6} {'Elo':<5} {'Elo+/-':<6}")
-    print("-" * 70)
+    print("=" * 73)
+    print(" " * 17 + "TOURNAMENT SCOREBOARD & ELO EVALUATION")
+    print("=" * 73)
+    print(f"{'Rank':<4} {'Engine Name':<25} {'Games':<6} {'W/D/L':<13} {'Points':<8} {'Score%':<7} {'Elo':<5}")
+    print("-" * 73)
     
     for rank, engine in enumerate(sorted_engines, 1):
         estats = stats[engine]
@@ -255,15 +255,13 @@ def main():
         pts = estats['points']
         pct = (pts / games_played * 100.0) if games_played > 0 else 0.0
         elo = round(ratings[engine])
-        elo_diff = elo - 2000
-        elo_diff_str = f"+{elo_diff}" if elo_diff >= 0 else f"{elo_diff}"
         engine_disp = (engine[:23] + "..") if len(engine) > 25 else engine
         
-        print(f"{rank:<4} {engine_disp:<25} {games_played:<5} {w_d_l:<9} {pts:<6.1f} {pct:<6.1f} {elo:<5} {elo_diff_str:<6}")
+        print(f"{rank:<4} {engine_disp:<25} {games_played:<6} {w_d_l:<13} {pts:<8.1f} {pct:<7.1f} {elo:<5}")
         
-    print("=" * 70)
+    print("=" * 73)
     print("Note: Elo calculates via iterative Bradley-Terry, normalized to 2000 avg.")
-    print("=" * 70)
+    print("=" * 73)
 
 if __name__ == '__main__':
     main()
