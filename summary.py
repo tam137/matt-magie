@@ -106,6 +106,49 @@ def compute_ratings_and_scores(games, iterations=100):
             
     return stats, ratings
 
+import subprocess
+import os
+
+def get_tournament_progress_info(games):
+    total_games = None
+    for game in reversed(games):
+        round_tag = game.get('Round', '')
+        if '/' in round_tag:
+            parts = round_tag.split('/')
+            if len(parts) == 2 and parts[1].isdigit():
+                total_games = int(parts[1])
+                break
+    
+    played_games = len(games)
+    
+    is_running = False
+    try:
+        res = subprocess.run(['pgrep', '-f', 'Matt-Magie|mm.sh'], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            my_pid = str(os.getpid())
+            pids = [p.strip() for p in res.stdout.strip().split('\n') if p.strip() and p.strip() != my_pid]
+            if pids:
+                is_running = True
+    except Exception:
+        pass
+        
+    if is_running:
+        status_str = "🟢 RUNNING"
+    elif total_games is not None and played_games >= total_games:
+        status_str = "🏁 FINISHED"
+    elif total_games is not None and played_games < total_games:
+        status_str = "⏸️ PAUSED / INTERRUPTED"
+    else:
+        status_str = "🏁 FINISHED"
+
+    if total_games is not None and total_games > 0:
+        pct = (played_games / total_games) * 100.0
+        progress_str = f"Progress: {played_games} / {total_games} games played ({pct:.1f}%) | Status: {status_str}"
+    else:
+        progress_str = f"Progress: {played_games} games played | Status: {status_str}"
+        
+    return progress_str
+
 def main():
     parser = argparse.ArgumentParser(description="Matt-Magie PGN Summary & Statistics Generator")
     parser.add_argument("pgn_file", help="Path to the PGN file to analyze")
@@ -129,15 +172,17 @@ def main():
         sys.exit(0)
         
     try:
-        games.sort(key=lambda g: int(g.get('Round', '0')))
+        games.sort(key=lambda g: int(g.get('Round', '0').split('/')[0]) if g.get('Round', '0').split('/')[0].isdigit() else 0)
     except Exception:
         pass
         
+    progress_str = get_tournament_progress_info(games)
+
     # Print individual results only if requested
     if show_games:
-        print("=" * 70)
+        print("=" * 73)
         print(" " * 23 + "INDIVIDUAL GAME RESULTS")
-        print("=" * 70)
+        print("=" * 73)
         for i, game in enumerate(games, 1):
             w = game['White']
             b = game['Black']
@@ -180,11 +225,13 @@ def main():
             else:
                 gauntlet_challenger = detected_challenger
                 
-        print("=" * 70)
-        print(" " * 19 + "GAUNTLET HEAD-TO-HEAD SUMMARY")
-        print("=" * 70)
+        print("=" * 73)
+        print(" " * 20 + "GAUNTLET HEAD-TO-HEAD SUMMARY")
+        print("=" * 73)
+        print(f" {progress_str}")
+        print("-" * 73)
         print(f"Challenger: {gauntlet_challenger}")
-        print("-" * 70)
+        print("-" * 73)
         
         total_wins = 0
         total_draws = 0
@@ -226,10 +273,10 @@ def main():
             opp_disp = (opp[:30] + "..") if len(opp) > 32 else opp
             print(f"vs {opp_disp:<32} {w_d_l:<9}")
             
-        print("-" * 70)
+        print("-" * 73)
         total_wdl = f"{total_wins}/{total_draws}/{total_losses}"
         print(f"{'TOTAL (W/D/L):':<35} {total_wdl:<9}")
-        print("=" * 70)
+        print("=" * 73)
         return
 
     stats, ratings = compute_ratings_and_scores(games, iterations=args.iterations)
@@ -245,6 +292,8 @@ def main():
     print("=" * 73)
     print(" " * 17 + "TOURNAMENT SCOREBOARD & ELO EVALUATION")
     print("=" * 73)
+    print(f" {progress_str}")
+    print("-" * 73)
     print(f"{'Rank':<4} {'Engine Name':<25} {'Games':<6} {'W/D/L':<13} {'Points':<8} {'Score%':<7} {'Elo':<5}")
     print("-" * 73)
     
@@ -265,3 +314,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
