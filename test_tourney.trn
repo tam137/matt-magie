@@ -14,4 +14,4 @@ rounds = 1
 pgn = test_cli_tourney.pgn
 
 # Engine configuration options
-engine_options = Hash=32, Threads=1
+engine_options = OwnBook=true, BookFile=books/Performance.bin, CacheBookInRam=true, Hash=128, Threads=1

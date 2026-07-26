@@ -6,4 +6,4 @@ rounds = 1
 pgn = test_gauntlet.pgn
 mode = gauntlet
 concurrency = 2
-engine_options = Hash=16, Threads=1
+engine_options = OwnBook=true, BookFile=books/Performance.bin, CacheBookInRam=true, Hash=128, Threads=1
