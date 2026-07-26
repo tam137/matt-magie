@@ -111,15 +111,24 @@ import os
 
 def get_tournament_progress_info(games):
     total_games = None
-    for game in reversed(games):
-        round_tag = game.get('Round', '')
+    batch_played_games = 0
+    
+    if games:
+        last_game = games[-1]
+        round_tag = last_game.get('Round', '')
         if '/' in round_tag:
             parts = round_tag.split('/')
             if len(parts) == 2 and parts[1].isdigit():
                 total_games = int(parts[1])
-                break
-    
-    played_games = len(games)
+                target_denom = parts[1]
+                for g in reversed(games):
+                    r_tag = g.get('Round', '')
+                    if '/' in r_tag and r_tag.split('/')[-1] == target_denom:
+                        batch_played_games += 1
+                    else:
+                        break
+
+    played_games = batch_played_games if (total_games is not None and batch_played_games > 0) else len(games)
     
     is_running = False
     try:
