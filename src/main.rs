@@ -51,6 +51,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let debug_on: bool = if args.get(11).cloned().unwrap_or_default() == "debug_on" { true } else { false };
     let engine_0_options: String = args.get(12).cloned().unwrap_or_default();
     let engine_1_options: String = args.get(13).cloned().unwrap_or_default();
+    // Optional opening line as space separated UCI moves. Playing the same line twice with the
+    // colours reversed removes the strength of the opening from the comparison instead of
+    // leaving it as noise, which is what makes short matches decide anything at all.
+    let opening_moves: String = args.get(14).cloned().unwrap_or_default();
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -198,8 +202,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if game_status == 2 {
             // all Engines ready for new game
-            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
-            tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
+            if !opening_moves.is_empty() {
+                apply_opening_line(&mut game, &opening_moves, &mut all_moves_long_algebraic);
+                log(&format!("opening line: {}", opening_moves), &logfile);
+
+                let position_cmd = format!("position startpos moves {}", game.made_moves_str);
+                if game.board.white_to_move {
+                    send(&mut engine_process_0, &position_cmd, &logfile);
+                } else {
+                    send(&mut engine_process_1, &position_cmd, &logfile);
+                }
+            }
+
+            let go_cmd = format!("go wtime {} winc {} btime {} binc {}",
+                remaining_time_white, inc_per_move_in_ms, remaining_time_black, inc_per_move_in_ms);
+
+            if game.board.white_to_move {
+                send(&mut engine_process_0, &go_cmd, &logfile);
+                tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
+            } else {
+                send(&mut engine_process_1, &go_cmd, &logfile);
+                tx_clock.send(TimeControl::BlackToMove).expect("MM could not send time data");
+            }
             game_status += 1;
         }
 
@@ -335,6 +359,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     send(&mut engine_process_1, "quit", &logfile);
     log("finished Matt Magie", &logfile);
     std::process::exit(0);
+}
+
+/// Plays a fixed opening line on the manager's own board before either engine is asked to move,
+/// and records it in the PGN move text exactly the way played moves are recorded.
+fn apply_opening_line(game: &mut UciGame, line: &str, all_moves_long_algebraic: &mut String) {
+    for mv in line.split_whitespace() {
+        game.do_move(mv);
+
+        let long_algebraic = if mv.len() > 4 {
+            format!("{}{}", &mv[0..4], "=Q")
+        } else {
+            NotationUtil::get_long_algebraic(mv, &game.board)
+        };
+
+        let move_number = if game.pty % 2 == 1 { format!("{}. ", game.pty / 2 + 1) } else { String::new() };
+        *all_moves_long_algebraic = format!("{} {}{}", all_moves_long_algebraic, move_number, long_algebraic);
+    }
 }
 
 fn parse_option(opt: &str) -> Option<(String, String)> {

@@ -1,4 +1,4 @@
-# Matt-Magie v1.4.2 - Chess Engine Matchup Manager
+# Matt-Magie v1.5.0 - Chess Engine Matchup Manager
 
 Matt-Magie is a lightweight, high-performance matchup manager written in Rust. It coordinates games between chess engines using the standard Universal Chess Interface (UCI) protocol, records matches in PGN format, and displays beautiful, console-optimized, sequentially calculated Elo scoreboards.
 
@@ -53,6 +53,10 @@ mode = gauntlet
 # Number of parallel games (concurrency) (optional, default: 1)
 concurrency = 2
 
+# Opening lines file (optional). One space separated list of UCI moves per line.
+# Both games of a colour-swapped pair are played from the same line.
+openings = openings/book_8ply.txt
+
 # Engine configuration options sent via setoption name <Key> value <Value>
 # comma-separated key-value pairs (optional)
 engine_options = Hash=128, Threads=1
@@ -66,6 +70,7 @@ engine_options = Hash=128, Threads=1
 * **`pgn`**: Target PGN output filename. If the file already exists, new games will be appended.
 * **`engine_options`**: (Optional) Comma-separated engine settings sent immediately after handshake (e.g. `Hash=128, Threads=1`).
 * **`mode`**: (Optional) Tournament format. Choose `round_robin` (default) for all-vs-all, or `gauntlet` for a challenger setup where the first engine listed in `engines` plays against all other engines (once as White and once as Black per opponent, per round).
+* **`openings`**: (Optional) Path to a file of opening lines, one space separated list of UCI moves per row. Each colour-swapped game pair is played from the same line, and the file is cycled through when there are more pairs than lines. Without it every game starts from the initial position, which makes the games of a match highly correlated and costs a large amount of statistical resolution.
 * **`concurrency`**: (Optional) Number of games to run in parallel. Default is `1`. Running multiple games simultaneously speeds up tournaments significantly. Note that each running game spawns two engine processes, so configure this based on your system's CPU cores and memory (e.g., total threads used = `2 * concurrency * Threads`).
 
 ---
@@ -79,11 +84,12 @@ The matchup manager orchestrates games by executing the following standard UCI c
 2. **Options Configuration**: Sends `setoption name <Name> value <Value>` for each custom engine option right after receiving `uciok` (e.g. configuring `Hash` or `Threads`).
 3. **Readiness Check**: Sends `isready` and expects the engine to respond with `readyok`.
 4. **New Game Setup**: Sends `ucinewgame` before every new game.
-5. **Position Transmission**: Sends `position startpos moves <move_list>` after each played move to synchronize the internal board state with the engine.
-6. **Search Command**: Sends time-controlled search instructions:
+5. **Position Transmission**: Sends `position startpos moves <move_list>` after each played move to synchronize the internal board state with the engine. When an opening line is configured, it is transmitted the same way before the first search.
+6. **Options for both sides**: `setoption` values from `engine_options` are sent to both engines. Earlier versions passed them to the White side only.
+7. **Search Command**: Sends time-controlled search instructions:
    `go wtime <white_time> btime <black_time> winc <white_increment> binc <black_increment>`
    It then parses the engine's output to read `bestmove <move>` and plays it on the internal manager board.
-7. **Interruption & Clean Termination**: Sends `stop` to halt any active search when a game is over or times out, followed by `quit` to cleanly terminate the engine processes.
+8. **Interruption & Clean Termination**: Sends `stop` to halt any active search when a game is over or times out, followed by `quit` to cleanly terminate the engine processes.
 
 > [!WARNING]
 > **Host Architecture Compatibility**: Since Matt-Magie spawns chess engines as native subprocesses, all binaries in the `engines/` directory must be compiled for and compatible with the target host architecture (e.g., `x86_64` or `aarch64/ARM`) where the manager is running.
