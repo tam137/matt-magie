@@ -50,7 +50,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let log_on: bool = if args.get(10).cloned().unwrap_or_default() == "log_on" { true } else { false };
     let debug_on: bool = if args.get(11).cloned().unwrap_or_default() == "debug_on" { true } else { false };
     let engine_0_options: String = args.get(12).cloned().unwrap_or_default();
-    let engine_1_options: String = args.get(13).cloned().unwrap_or_default();
+    // An empty option string for engine 1 means "same as engine 0", not "no options".
+    // Every caller is running an A/B match, where the two engines have to meet under identical
+    // conditions; a caller that passed only argument 12 was silently leaving engine 1 on the
+    // engine's own defaults -- a different hash size, which moves the transposition table hit
+    // rate and with it every search rule that reads the table.
+    let engine_1_options: String = match args.get(13) {
+        Some(opts) if !opts.is_empty() => opts.clone(),
+        _ => engine_0_options.clone(),
+    };
     // Space-separated UCI moves (e.g. "e2e4 c7c5 g1f3 ..."), always an even count so White
     // is on move at handover. Empty when no opening line was supplied.
     let opening_moves_str: String = args.get(14).cloned().unwrap_or_default();
@@ -74,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
 
-    log("Matt-Magie 1.3 started", &logfile);
+    log(&format!("Matt-Magie {} started", env!("CARGO_PKG_VERSION")), &logfile);
 
 
     let (tx0, rx) = mpsc::channel();

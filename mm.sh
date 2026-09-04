@@ -200,13 +200,13 @@ run_single_match() {
     local game_num=1
     for ((r=0; r<rounds; r++)); do
         echo -e "${YELLOW}=== Round $current_round.1: ${engines[$e1_idx]} (White) vs ${engines[$e2_idx]} (Black) ===${NC}"
-        $MM_EXEC "$engine1" "$engine2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
+        $MM_EXEC "$engine1" "$engine2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options"
         tail -n 12 "$pgn"
         echo ""
         game_num=$((game_num+1))
 
         echo -e "${YELLOW}=== Round $current_round.2: ${engines[$e2_idx]} (White) vs ${engines[$e1_idx]} (Black) (Colors swapped) ===${NC}"
-        $MM_EXEC "$engine2" "$engine1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options"
+        $MM_EXEC "$engine2" "$engine1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options"
         tail -n 12 "$pgn"
         echo ""
         game_num=$((game_num+1))
@@ -251,7 +251,7 @@ run_single_game_job() {
     local tmp_pgn="${pgn}.game_${game_num}.tmp"
     local tmp_log="${logfile}.game_${game_num}.tmp"
 
-    $MM_EXEC "$e1" "$e2" "$tmp_log" "$tmp_pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debugging" "$engine_options" "" "$opening"
+    $MM_EXEC "$e1" "$e2" "$tmp_log" "$tmp_pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debugging" "$engine_options" "$engine_options" "$opening"
 
     (
         flock -x 200
@@ -360,13 +360,13 @@ execute_tournament_games() {
                     local e2="engines/$opp_name"
 
                     echo -e "${YELLOW}=== Game $game_num/$total_games: $challenger_name (White) vs $opp_name (Black) ===${NC}"
-                    $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "" "$opening"
+                    $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                     tail -n 12 "$pgn"
                     echo ""
                     game_num=$((game_num+1))
 
                     echo -e "${YELLOW}=== Game $game_num/$total_games: $opp_name (White) vs $challenger_name (Black) (Colors swapped) ===${NC}"
-                    $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "" "$opening"
+                    $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                     tail -n 12 "$pgn"
                     echo ""
                     game_num=$((game_num+1))
@@ -382,13 +382,13 @@ execute_tournament_games() {
                         local e2="engines/$e2_name"
 
                         echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
-                        $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "" "$opening"
+                        $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                         tail -n 12 "$pgn"
                         echo ""
                         game_num=$((game_num+1))
 
                         echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
-                        $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "" "$opening"
+                        $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                         tail -n 12 "$pgn"
                         echo ""
                         game_num=$((game_num+1))
