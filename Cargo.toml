@@ -1,11 +1,16 @@
 [package]
 name = "Matt-Magie"
-version = "1.1.1"
+version = "1.4.4"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "Matt-Magie"
+path = "src/main.rs"
 
 [dependencies]
 chrono = "0.4.38"
 regex = "1.11.1"
-rand = "0.8.5"
+rand = "0.9"
+
+[profile.release]
+opt-level = 3

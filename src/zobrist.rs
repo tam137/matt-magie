@@ -7,6 +7,7 @@ const BOARD_SIZE: usize = 120;
 const NUM_PIECES: usize = 12;
 const FIG: [usize; 12] = [10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25];
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ZobristTable {
     table: [[u64; NUM_PIECES]; BOARD_SIZE],
@@ -16,6 +17,7 @@ pub struct ZobristTable {
     entries: u32,
 }
 
+#[allow(dead_code)]
 impl ZobristTable {
     pub(crate) fn new() -> Self {
 
@@ -39,14 +41,14 @@ impl ZobristTable {
         for i in 0..BOARD_SIZE {
             for j in FIG {
                 let fig_index = fig_map.get(&(j as usize)).unwrap();
-                table[i][*fig_index] = rng.gen();
+                table[i][*fig_index] = rng.random();
             }
         }
-        let white_to_move = rng.gen();
+        let white_to_move = rng.random();
         Self { table, fig_map, white_to_move, hash_map: HashMap::with_capacity(1000), entries: 0 }
     }
 
-    pub fn gen(&self, board: &Board) -> u64 {
+    pub fn gen_hash(&self, board: &Board) -> u64 {
         let mut hash = 0u64;
         if board.white_to_move {
             hash ^= self.white_to_move;

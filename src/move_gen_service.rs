@@ -455,3 +455,92 @@ impl MoveGenService {
         self.get_attack_idx_list(field, white, 0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service::Service;
+    use crate::notation_util::NotationUtil;
+
+    #[test]
+    fn test_starting_position_moves() {
+        let service = Service::new();
+        let mut board = service.fen.set_init_board();
+        let moves = service.move_gen.generate_valid_moves_list(&mut board);
+        // There must be exactly 20 valid moves for white in the initial position
+        assert_eq!(moves.len(), 20);
+        assert_eq!(board.game_status, GameStatus::Normal);
+    }
+
+    #[test]
+    fn test_do_undo_roundtrip() {
+        let service = Service::new();
+        // A standard game position with Rochade/En-passant/Promotions possibilities
+        let mut board = service.fen.set_fen("rnbqkbnr/ppp1pp1p/6p1/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+        let moves = service.move_gen.generate_valid_moves_list(&mut board);
+
+        for turn in &moves {
+            let board_before = board.clone();
+            let move_info = board.do_move(turn);
+            board.undo_move(turn, move_info);
+            assert_eq!(board, board_before, "Board state mismatch after undoing move {:?}", turn);
+        }
+    }
+
+    #[test]
+    fn test_checkmate_detection() {
+        let service = Service::new();
+        let mut board = service.fen.set_init_board();
+
+        // Fool's Mate sequence: 1. f3 e5 2. g4 Qh4#
+        let moves_seq = vec!["f2f3", "e7e5", "g2g4", "d8h4"];
+        for m in moves_seq {
+            let turn = NotationUtil::get_turn_from_notation(m);
+            let valid_moves = service.move_gen.generate_valid_moves_list(&mut board);
+            let actual_turn = valid_moves.iter().find(|t| t.from == turn.from && t.to == turn.to && t.promotion == turn.promotion)
+                .expect("Move in sequence is illegal");
+            board.do_move(actual_turn);
+        }
+
+        // Now it is white's turn, and they should be checkmated by the black queen
+        let valid_moves = service.move_gen.generate_valid_moves_list(&mut board);
+        assert_eq!(valid_moves.len(), 0);
+        assert_eq!(board.game_status, GameStatus::BlackWin);
+    }
+
+    #[test]
+    fn test_stalemate_detection() {
+        let service = Service::new();
+        // A classic stalemate FEN where Black has only a King on a8, White has Queen on c7 and King on c6.
+        // It is Black's turn to move.
+        let mut board = service.fen.set_fen("k7/2Q5/2K5/8/8/8/8/8 b - - 0 1");
+        
+        let valid_moves = service.move_gen.generate_valid_moves_list(&mut board);
+        assert_eq!(valid_moves.len(), 0);
+        assert_eq!(board.game_status, GameStatus::Draw);
+    }
+
+    #[test]
+    fn test_three_fold_repetition() {
+        let service = Service::new();
+        let mut board = service.fen.set_init_board();
+
+        // 1. Nf3 Nc6 2. Ng1 Nb8 3. Nf3 Nc6 4. Ng1 Nb8 5. Nf3 (3-fold repetition of position after Nf3 Nc6 Ng1 Nb8)
+        let moves_seq = vec![
+            "g1f3", "b8c6", "f3g1", "c6b8",
+            "g1f3", "b8c6", "f3g1", "c6b8",
+            "g1f3"
+        ];
+
+        for m in moves_seq {
+            assert_eq!(board.game_status, GameStatus::Normal);
+            let turn = NotationUtil::get_turn_from_notation(m);
+            let valid_moves = service.move_gen.generate_valid_moves_list(&mut board);
+            let actual_turn = valid_moves.iter().find(|t| t.from == turn.from && t.to == turn.to && t.promotion == turn.promotion)
+                .expect("Move is illegal");
+            board.do_move(actual_turn);
+        }
+
+        assert_eq!(board.game_status, GameStatus::Draw);
+    }
+}

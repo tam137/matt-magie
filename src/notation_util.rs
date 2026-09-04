@@ -53,6 +53,7 @@ impl NotationUtil {
     }
 
     /// Finds a specific move in the move list based on the notation.
+    #[allow(dead_code)]
     pub fn get_turn_from_list(move_list: &Vec<Turn>, notation: &str) -> Turn {
         let mut target_turn = NotationUtil::get_turn_from_notation(notation);
 
@@ -95,6 +96,39 @@ impl NotationUtil {
             _ => "".to_string(), // Pawn
         };
         format!("{}{}", figure_str, move_notation)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_conversion() {
+        assert_eq!(NotationUtil::get_index_from_notation_field("e2"), 85);
+        assert_eq!(NotationUtil::get_index_from_notation_field("d6"), 44);
+        assert_eq!(NotationUtil::get_index_from_notation_field("a1"), 91);
+        assert_eq!(NotationUtil::get_index_from_notation_field("h8"), 28);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid chess move notation")]
+    fn test_invalid_notation_panics() {
+        NotationUtil::get_turn_from_notation("e2e9");
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid chess move notation")]
+    fn test_out_of_bounds_notation_panics() {
+        NotationUtil::get_turn_from_notation("z9z9");
+    }
+
+    #[test]
+    fn test_get_turn_from_notation() {
+        let turn = NotationUtil::get_turn_from_notation("e2e4");
+        assert_eq!(turn.from, 85);
+        assert_eq!(turn.to, 65);
+        assert_eq!(turn.promotion, 0);
     }
 }
 

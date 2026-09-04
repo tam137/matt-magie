@@ -47,8 +47,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let round = args.get(7).expect("MM pgn round not defined").to_string();
     let time_per_game = args.get(8).expect("MM pgn time per game not defined").to_string();
     let inc_per_move_in_ms = args.get(9).expect("MM Inc per move not defined").to_string();
-    let log_on: bool = if args.get(9).expect("MM log_on not defined") == ("log_on") { true } else { false };
-    let debug_on: bool = if args.get(10).expect("MM log_on not defined") == ("debug_on") { true } else { false };
+    let log_on: bool = if args.get(10).cloned().unwrap_or_default() == "log_on" { true } else { false };
+    let debug_on: bool = if args.get(11).cloned().unwrap_or_default() == "debug_on" { true } else { false };
+    let engine_0_options: String = args.get(12).cloned().unwrap_or_default();
+    let engine_1_options: String = args.get(13).cloned().unwrap_or_default();
+    // Space-separated UCI moves (e.g. "e2e4 c7c5 g1f3 ..."), always an even count so White
+    // is on move at handover. Empty when no opening line was supplied.
+    let opening_moves_str: String = args.get(14).cloned().unwrap_or_default();
+    let opening_moves: Vec<&str> = opening_moves_str.split_whitespace().collect();
 
     let now = Local::now();
     let date = format!("{:04}.{:02}.{:02}", now.year(), now.month(), now.day());
@@ -68,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
 
-    log("Matt-Magie 1.1.3 started", &logfile);
+    log("Matt-Magie 1.3 started", &logfile);
 
 
     let (tx0, rx) = mpsc::channel();
@@ -153,19 +159,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             if to_move == TimeControl::WhiteToMove {
-                let  mut wtime = time_white_clone.lock().expect("MM could not unlock time_white");
-                if *wtime < 2000 {
-                    *wtime = 2000;
-                } else {
-                    *wtime -= 10;
-                }
+                let mut wtime = time_white_clone.lock().expect("MM could not unlock time_white");
+                *wtime -= 10;
             } else if to_move == TimeControl::BlackToMove {
-                let  mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
-                if *btime < 2000 {
-                    *btime = 2000;
-                } else {
-                    *btime -= 10;
-                }
+                let mut btime = time_black_clone.lock().expect("MM could not unlock time_white");
+                *btime -= 10;
             }
             thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -176,6 +174,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut game = UciGame::new(service.fen.set_init_board());
     let mut all_moves_long_algebraic = String::new();
+    for mv in &opening_moves {
+        all_moves_long_algebraic.push_str(&apply_move_for_pgn(&mut game, mv));
+    }
     let mut game_status = 0;
 
     let mut remaining_time_white;
@@ -184,12 +185,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     // mainthread loop received engine inputs from all engines
     loop {
 
+        // Check if either engine process has exited unexpectedly
+        if let Ok(Some(status)) = engine_process_0.try_wait() {
+            log(&format!("Engine 0 exited unexpectedly: {:?}", status), &logfile);
+            game.board.game_status = GameStatus::BlackWinByTime;
+        } else if let Ok(Some(status)) = engine_process_1.try_wait() {
+            log(&format!("Engine 1 exited unexpectedly: {:?}", status), &logfile);
+            game.board.game_status = GameStatus::WhiteWinByTime;
+        }
+
         remaining_time_white = *time_white.lock().expect("MM could not unlock time_white (remaining_time)");
         remaining_time_black = *time_black.lock().expect("MM could not unlock time_white (remaining_time)");
     
         if remaining_time_white <= 0 {
             game.board.game_status = GameStatus::BlackWinByTime;
-        } else if remaining_time_black <= 0{
+        } else if remaining_time_black <= 0 {
             game.board.game_status = GameStatus::WhiteWinByTime;
         }
 
@@ -242,6 +252,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         
                 match msg {
                     "uciok" => {
+                        let opts = if white { &engine_0_options } else { &engine_1_options };
+                        if !opts.is_empty() {
+                            for opt in opts.split(',') {
+                                if let Some((name, val)) = parse_option(opt) {
+                                    send(current_engine_process, &format!("setoption name {} value {}", name, val), &logfile);
+                                }
+                            }
+                        }
                         if debug_on {
                             send(current_engine_process, "debug on", &logfile);
                         }
@@ -249,6 +267,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     "readyok" => {
                         send(current_engine_process, "ucinewgame", &logfile);
+                        if white && !opening_moves_str.is_empty() {
+                            send(current_engine_process, &format!("position startpos moves {}", opening_moves_str), &logfile);
+                        }
                         game_status += 1;
                     }
                     _ if msg.starts_with("id name") => {
@@ -318,12 +339,65 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    //send(&mut engine_process_0, "stop", &logfile);
-    //send(&mut engine_process_1, "stop", &logfile);
+    send(&mut engine_process_0, "stop", &logfile);
+    send(&mut engine_process_1, "stop", &logfile);
     send(&mut engine_process_0, "quit", &logfile);
     send(&mut engine_process_1, "quit", &logfile);
     log("finished Matt Magie", &logfile);
     std::process::exit(0);
+}
+
+// Applies one opening move (plain 4-char UCI notation) to `game` and returns its PGN
+// fragment, formatted exactly like the live bestmove handler so opening and search moves
+// share one continuous, correctly-numbered move string.
+fn apply_move_for_pgn(game: &mut UciGame, uci_move: &str) -> String {
+    game.do_move(uci_move);
+    let turn = NotationUtil::get_turn_from_notation(uci_move);
+    let long_algebraic = if turn.promotion != 0 {
+        format!("{}{}", &uci_move[0..4], "=Q")
+    } else {
+        NotationUtil::get_long_algebraic(&uci_move[0..4], &game.board)
+    };
+    let move_number = if game.pty % 2 == 1 { format!("{}. ", game.pty / 2 + 1) } else { format!("") };
+    format!(" {}{}", move_number, long_algebraic)
+}
+
+fn parse_option(opt: &str) -> Option<(String, String)> {
+    let opt = opt.trim();
+    if opt.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = if opt.contains('=') {
+        opt.splitn(2, '=').collect()
+    } else if opt.contains(':') {
+        opt.splitn(2, ':').collect()
+    } else {
+        return None;
+    };
+
+    if parts.len() == 2 {
+        let name = parts[0].trim().to_string();
+        let value = parts[1].trim().to_string();
+        if !name.is_empty() && !value.is_empty() {
+            return Some((name, value));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_option() {
+        assert_eq!(parse_option("Hash=128"), Some(("Hash".to_string(), "128".to_string())));
+        assert_eq!(parse_option("Threads:4"), Some(("Threads".to_string(), "4".to_string())));
+        assert_eq!(parse_option("  Ponder  =  true  "), Some(("Ponder".to_string(), "true".to_string())));
+        assert_eq!(parse_option("InvalidOption"), None);
+        assert_eq!(parse_option("="), None);
+        assert_eq!(parse_option(""), None);
+    }
 }
 
 
