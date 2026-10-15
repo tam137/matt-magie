@@ -10,7 +10,10 @@ pub enum GameStatus {
     WhiteWin,
     BlackWin,
     WhiteWinByTime,
-    BlackWinByTime
+    BlackWinByTime,
+    // The other engine sent an illegal or unreadable move (or moved out of turn).
+    WhiteWinByIllegalMove,
+    BlackWinByIllegalMove
 }
 
 
@@ -114,16 +117,21 @@ impl Turn {
         self
     }
 
-    #[allow(dead_code)]
     pub fn to_algebraic(&self) -> String {
         let column_from = (self.from % 10 + 96) as u8;
         let row_from = (10 - (self.from / 10) + 48) as u8;
         let column_to = (self.to % 10 + 96) as u8;
         let row_to = (10 - (self.to / 10) + 48) as u8;
-        let mut promotional_lit = "";
-        if self.promotion != 0 {
-            promotional_lit = if self.promotion % 10 == 4 { "q" } else { "k" };
-        }
+        let promotional_lit = if self.promotion == 0 {
+            ""
+        } else {
+            match self.promotion % 10 {
+                1 => "r",
+                2 => "n",
+                3 => "b",
+                _ => "q",
+            }
+        };
         format!(
             "{}{}{}{}{}",
             column_from as char, row_from as char, column_to as char, row_to as char, &promotional_lit

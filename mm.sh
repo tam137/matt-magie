@@ -190,7 +190,8 @@ run_single_match() {
     local event="Suprah-Single-Match"
     local site="local"
     local logging="log_on"
-    local debuging="debug_on"
+    local debuging="debug_off"
+    [[ "${MM_ENGINE_DEBUG:-0}" == "1" ]] && debuging="debug_on"
 
     # Make sure pgn exists
     touch "$pgn"
@@ -281,6 +282,10 @@ execute_tournament_games() {
     local tournament_mode="${7:-round_robin}"
     local concurrency="${8:-1}"
     local openings_file="${9:-}"
+    local engine_debug="${10:-}"
+    if [[ -z "$engine_debug" ]]; then
+        if [[ "${MM_ENGINE_DEBUG:-0}" == "1" ]]; then engine_debug="true"; else engine_debug="false"; fi
+    fi
 
     # Convert comma-separated string back to array
     local OLD_IFS="$IFS"
@@ -320,6 +325,7 @@ execute_tournament_games() {
     echo -e "  Rounds: $rounds"
     echo -e "  Total Games: $total_games"
     echo -e "  Concurrency: $concurrency"
+    echo -e "  Engine debug logs: $engine_debug"
     if [[ ! -z "$engine_options" ]]; then
         echo -e "  Engine Options: $engine_options"
     fi
@@ -332,7 +338,8 @@ execute_tournament_games() {
     local event="Suprah-Tournament"
     local site="local"
     local logging="log_on"
-    local debuging="debug_on"
+    local debuging="debug_off"
+    [[ "$engine_debug" == "true" ]] && debuging="debug_on"
 
     if [[ -f "$pgn" ]]; then
         echo -e "${YELLOW}Note: PGN file '$(basename "$pgn")' already exists. New games will be appended!${NC}"
@@ -486,6 +493,7 @@ run_file_tournament() {
     local mode_val=""
     local concurrency_val=""
     local openings_val=""
+    local engine_debug_val=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Strip comments starting with #
@@ -528,6 +536,9 @@ run_file_tournament() {
                     ;;
                 openings)
                     openings_val="$val"
+                    ;;
+                engine_debug)
+                    engine_debug_val="$val"
                     ;;
                 *)
                     echo -e "${YELLOW}Warning: Unknown key '$key' in tournament file.${NC}"
@@ -573,6 +584,16 @@ run_file_tournament() {
     fi
     if [[ ! "$concurrency_val" =~ ^[0-9]+$ || "$concurrency_val" -le 0 ]]; then
         echo -e "${RED}Error: 'concurrency' must be a positive integer, found '$concurrency_val'!${NC}"
+        exit 1
+    fi
+
+    # Engine debug logs (`debug on` -> rust-in-piece-<version>.log, gigabytes per long run) are off
+    # unless the file asks for them; MM_ENGINE_DEBUG=1 switches them on when the file says nothing.
+    if [[ -z "$engine_debug_val" ]]; then
+        if [[ "${MM_ENGINE_DEBUG:-0}" == "1" ]]; then engine_debug_val="true"; else engine_debug_val="false"; fi
+    fi
+    if [[ "$engine_debug_val" != "true" && "$engine_debug_val" != "false" ]]; then
+        echo -e "${RED}Error: 'engine_debug' must be 'true' or 'false', found '$engine_debug_val'!${NC}"
         exit 1
     fi
 
@@ -635,7 +656,7 @@ run_file_tournament() {
     engines_clean_str=$(IFS=,; echo "${engines[*]}")
 
     # Run the tournament games
-    execute_tournament_games "$engines_clean_str" "$tc_val" "$inc_val" "$rounds_val" "$pgn_path" "$options_val" "$mode_val" "$concurrency_val" "$openings_val"
+    execute_tournament_games "$engines_clean_str" "$tc_val" "$inc_val" "$rounds_val" "$pgn_path" "$options_val" "$mode_val" "$concurrency_val" "$openings_val" "$engine_debug_val"
 }
 
 # Run Tournament (Interactive configuration)

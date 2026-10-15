@@ -40,7 +40,7 @@ impl MoveGenService {
             // Check for promotion
             if let Some(promotion_move) = self.get_promotion_move(board, white_turn, idx0, idx1) {
                 move_turn.promotion = promotion_move.promotion;
-                // Validate and add the promotion moves (e.g., Queen, Knight)
+                // Validate and add the promotion moves (all four pieces)
                 self.validate_and_add_promotion_moves(board, &mut move_turn, &mut valid_moves, white_turn);
             } else {
                 // Validate and add the regular move
@@ -110,7 +110,7 @@ impl MoveGenService {
     }
     
     fn validate_and_add_promotion_moves(&self, board: &mut Board, turn: &mut Turn, valid_moves: &mut Vec<Turn>, white_turn: bool) {
-        let promotion_types = if white_turn { [12, 14] } else { [22, 24] }; // Knight and Queen promotions for white and black
+        let promotion_types = if white_turn { [11, 12, 13, 14] } else { [21, 22, 23, 24] }; // Rook, Knight, Bishop and Queen
         for &promotion in &promotion_types {
             turn.promotion = promotion;
             self.validate_and_add_move(board, turn, valid_moves, white_turn);
@@ -542,5 +542,86 @@ mod tests {
         }
 
         assert_eq!(board.game_status, GameStatus::Draw);
+    }
+
+    #[test]
+    fn test_every_promotion_piece_is_generated() {
+        let service = Service::new();
+        // Each side has one pawn that can push or capture onto the last rank.
+        for (fen, pieces) in [
+            ("r6k/1P6/8/8/8/8/1p6/R6K w - - 0 1", [11, 12, 13, 14]),
+            ("r6k/1P6/8/8/8/8/1p6/R6K b - - 0 1", [21, 22, 23, 24]),
+        ] {
+            let mut board = service.fen.set_fen(fen);
+            let moves = service.move_gen.generate_valid_moves_list(&mut board);
+            let mut promotions: Vec<(i32, i32)> = moves.iter()
+                .filter(|t| t.is_promotion())
+                .map(|t| (t.to, t.promotion))
+                .collect();
+            promotions.sort();
+            let (push, capture) = if board.white_to_move { (22, 21) } else { (92, 91) };
+            let mut expected: Vec<(i32, i32)> = pieces.iter()
+                .flat_map(|&p| [(push, p), (capture, p)])
+                .collect();
+            expected.sort();
+            assert_eq!(promotions, expected, "{}", fen);
+        }
+    }
+
+    fn perft(service: &Service, board: &mut Board, depth: u32) -> u64 {
+        let moves = service.move_gen.generate_valid_moves_list(board);
+        if depth == 1 {
+            return moves.len() as u64;
+        }
+        let mut nodes = 0;
+        for turn in &moves {
+            let move_info = board.do_move(turn);
+            nodes += perft(service, board, depth - 1);
+            board.undo_move(turn, move_info);
+        }
+        nodes
+    }
+
+    // Reference counts from https://www.chessprogramming.org/Perft_Results. Matt-Magie judges an
+    // engine move illegal when it is missing from this generator's list and scores the game as
+    // lost, so the generator has to produce exactly the legal moves - no more, no fewer.
+    fn assert_perft(fen: &str, expected: &[u64]) {
+        let service = Service::new();
+        let mut board = service.fen.set_fen(fen);
+        for (i, &nodes) in expected.iter().enumerate() {
+            let depth = i as u32 + 1;
+            assert_eq!(perft(&service, &mut board, depth), nodes, "perft({}) of {}", depth, fen);
+        }
+    }
+
+    #[test]
+    fn test_perft_start_position() {
+        assert_perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281]);
+    }
+
+    #[test]
+    fn test_perft_kiwipete() {
+        assert_perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", &[48, 2039, 97862]);
+    }
+
+    #[test]
+    fn test_perft_position_3() {
+        assert_perft("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", &[14, 191, 2812, 43238]);
+    }
+
+    #[test]
+    fn test_perft_position_4_with_underpromotions() {
+        assert_perft("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", &[6, 264, 9467]);
+        assert_perft("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1", &[6, 264, 9467]);
+    }
+
+    #[test]
+    fn test_perft_position_5() {
+        assert_perft("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8", &[44, 1486, 62379]);
+    }
+
+    #[test]
+    fn test_perft_position_6() {
+        assert_perft("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", &[46, 2079, 89890]);
     }
 }

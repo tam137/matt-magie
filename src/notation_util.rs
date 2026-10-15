@@ -24,68 +24,56 @@ impl NotationUtil {
 
     /// Converts a notation move (like "e2e4") to a `Turn` object.
     pub fn get_turn_from_notation(notation_move: &str) -> Turn {
+        NotationUtil::try_turn_from_notation(notation_move).unwrap_or_else(|| {
+            panic!("Invalid chess move notation: Must be in standard algebraic format. Found: '{}'", notation_move)
+        })
+    }
 
-        let valid_move_regex = Regex::new(r"^[a-h][1-8][a-h][1-8][qkbnr]?$").unwrap();
+    /// Converts a UCI move ("e2e4", "e7e8r") to a `Turn`, or `None` if it is not well-formed.
+    /// The promotion letter is lower case as UCI prescribes (`q`, `r`, `b`, `n`) and only
+    /// allowed on a move to the first or last rank.
+    pub fn try_turn_from_notation(notation_move: &str) -> Option<Turn> {
+        let valid_move_regex = Regex::new(r"^[a-h][1-8][a-h][1-8][qrbn]?$").unwrap();
         if !valid_move_regex.is_match(notation_move) {
-            panic!("Invalid chess move notation: Must be in standard algebraic format. Found: '{}'", notation_move);
+            return None;
         }
 
         let from = NotationUtil::get_index_from_notation_field(&notation_move[0..2]);
         let to = NotationUtil::get_index_from_notation_field(&notation_move[2..4]);
         let mut promotion = 0;
 
-        // Promotion logic for white
-        if notation_move.len() == 5 && notation_move.chars().nth(3) == Some('8') {
-            promotion = match notation_move.chars().nth(4) {
-                Some('n') => 12,
-                _ => 14, // default to queen
+        if let Some(piece) = notation_move.chars().nth(4) {
+            let white_piece = match piece {
+                'r' => 11,
+                'n' => 12,
+                'b' => 13,
+                _ => 14, // 'q', the regex admits nothing else
+            };
+            promotion = match notation_move.chars().nth(3) {
+                Some('8') => white_piece,
+                Some('1') => white_piece + 10, // black piece
+                _ => return None,
             };
         }
-
-        // Promotion logic for black
-        if notation_move.len() == 5 && notation_move.chars().nth(3) == Some('1') {
-            promotion = match notation_move.chars().nth(4) {
-                Some('n') => 22,
-                _ => 24, // default to queen
-            };
-        }
-        Turn::new(from, to, 0, promotion, 0, false)
+        Some(Turn::new(from, to, 0, promotion, 0, false))
     }
 
-    /// Finds a specific move in the move list based on the notation.
-    #[allow(dead_code)]
-    pub fn get_turn_from_list(move_list: &Vec<Turn>, notation: &str) -> Turn {
-        let mut target_turn = NotationUtil::get_turn_from_notation(notation);
-
-        // Handle promotion
-        if notation.len() == 5 {
-            match notation.chars().nth(4) {
-                Some('q') => target_turn.promotion = 14,
-                Some('n') => target_turn.promotion = 12,
-                Some('Q') => target_turn.promotion = 14,
-                Some('N') => target_turn.promotion = 12,
-                _ => panic!("Invalid promotion"),
-            }
-
-            if target_turn.to / 90 == 1 {
-                target_turn.promotion = target_turn.promotion + 10; // for black promotion
-            }
-        }
-
-        for move_turn in move_list {
-            if move_turn.from == target_turn.from
-                && move_turn.to == target_turn.to
-                && move_turn.promotion == target_turn.promotion
-            {
-                return move_turn.clone(); // Return the found move
-            }
-        }
-        panic!("Turn not found in the move list for notation: {}", notation);
+    /// Finds the move written as `notation` in `move_list`, matching squares and promotion piece.
+    pub fn find_turn_in_list(move_list: &[Turn], notation: &str) -> Option<Turn> {
+        let target = NotationUtil::try_turn_from_notation(notation)?;
+        move_list.iter()
+            .find(|turn| turn.from == target.from && turn.to == target.to && turn.promotion == target.promotion)
+            .cloned()
     }
 
     /// Return a long algebraic notation. Also known as SAN
+    /// Call it after the move has been made: the piece letter is read from the target square.
+    /// A promotion is written as "e7e8=R"; `Pgn::set_moves` turns that into "e8=R".
     pub fn get_long_algebraic(move_notation: &str, board: &Board) -> String {
         let turn = NotationUtil::get_turn_from_notation(move_notation);
+        if turn.is_promotion() {
+            return format!("{}={}", &move_notation[0..4], move_notation[4..5].to_uppercase());
+        }
         let figure = board.field[turn.to as usize] % 10;
         let figure_str = match figure {
             1 => "R".to_string(),
@@ -129,6 +117,21 @@ mod tests {
         assert_eq!(turn.from, 85);
         assert_eq!(turn.to, 65);
         assert_eq!(turn.promotion, 0);
+    }
+
+    #[test]
+    fn test_promotion_to_each_piece() {
+        for (suffix, white, black) in [("q", 14, 24), ("r", 11, 21), ("b", 13, 23), ("n", 12, 22)] {
+            assert_eq!(NotationUtil::get_turn_from_notation(&format!("a7a8{}", suffix)).promotion, white, "a7a8{}", suffix);
+            assert_eq!(NotationUtil::get_turn_from_notation(&format!("h2g1{}", suffix)).promotion, black, "h2g1{}", suffix);
+        }
+    }
+
+    #[test]
+    fn test_turn_to_algebraic_round_trip() {
+        for notation in ["e2e4", "e1g1", "e7e8q", "e7e8r", "e7e8b", "e7e8n", "a2b1q", "a2b1r", "a2b1b", "a2b1n"] {
+            assert_eq!(NotationUtil::get_turn_from_notation(notation).to_algebraic(), notation);
+        }
     }
 }
 

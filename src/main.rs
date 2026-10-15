@@ -22,6 +22,7 @@ use chrono::{Local, Datelike, Timelike};
 use model::UciGame;
 use model::GameStatus;
 use model::Board;
+use model::Turn;
 
 use crate::log::log;
 
@@ -84,6 +85,22 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log(&format!("Matt-Magie {} started", env!("CARGO_PKG_VERSION")), &logfile);
 
+    // Opening moves are checked like engine moves, before any engine is started: an illegal line
+    // is no engine's fault, so the game is not played at all.
+    let service = Service::new();
+    let mut game = UciGame::new(service.fen.set_init_board());
+    let mut all_moves_long_algebraic = String::new();
+    let mut legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+    for mv in &opening_moves {
+        if NotationUtil::find_turn_in_list(&legal_moves, mv).is_none() {
+            let msg = format!("illegal opening move '{}' after '{}', game not played", mv, game.made_moves_str);
+            log(&msg, &logfile);
+            eprintln!("Matt-Magie: {}", msg);
+            std::process::exit(1);
+        }
+        all_moves_long_algebraic.push_str(&apply_move_for_pgn(&mut game, mv));
+        legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+    }
 
     let (tx0, rx) = mpsc::channel();
     let tx1 = mpsc::Sender::clone(&tx0);
@@ -178,13 +195,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
 
-    let service = Service::new();
-
-    let mut game = UciGame::new(service.fen.set_init_board());
-    let mut all_moves_long_algebraic = String::new();
-    for mv in &opening_moves {
-        all_moves_long_algebraic.push_str(&apply_move_for_pgn(&mut game, mv));
-    }
     let mut game_status = 0;
 
     let mut remaining_time_white;
@@ -288,30 +298,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }    
                     }
                     _ if msg.starts_with("bestmove") => {
-                        
-                        
-                        let best_move = if msg.len() > 13 {
-                            &msg[9..14]
-                        } else {
-                            &msg[9..13]
-                        };
-                        
-                        game.do_move(best_move);
 
-                        let turn = NotationUtil::get_turn_from_notation(best_move);
+                        match apply_engine_move(&mut game, &legal_moves, msg, white) {
+                            Ok(pgn_fragment) => all_moves_long_algebraic.push_str(&pgn_fragment),
+                            Err(reason) => {
+                                let legal: Vec<String> = legal_moves.iter().map(|turn| turn.to_algebraic()).collect();
+                                log(&format!("illegal move by {} ({}): {}; fen {}; legal moves: {}",
+                                    id_engine,
+                                    if white { "white" } else { "black" },
+                                    reason,
+                                    service.fen.get_fen(&game.board),
+                                    legal.join(" ")),
+                                    &logfile);
+                                game.board.game_status = if white { GameStatus::BlackWinByIllegalMove } else { GameStatus::WhiteWinByIllegalMove };
+                                check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service);
+                                break;
+                            }
+                        }
 
-                        let long_algebraic = if turn.promotion != 0 {
-                            format!("{}{}", &msg[9..13], "=Q")
-                        } else {
-                            format!("{}", NotationUtil::get_long_algebraic(&msg[9..13], &game.board))
-                        };
-                        
+                        legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
 
-                        let move_number = if game.pty % 2 == 1 { format!("{}. ", game.pty / 2 + 1) } else { format!("") };
-                        all_moves_long_algebraic = format!("{} {}{}", all_moves_long_algebraic, move_number, long_algebraic);
-                        let possible_turns = service.move_gen.generate_valid_moves_list(&mut game.board);
-                        
-                        if possible_turns.is_empty() {
+                        if legal_moves.is_empty() {
                             log("found no moves", &logfile);
                         }
 
@@ -355,19 +362,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::process::exit(0);
 }
 
-// Applies one opening move (plain 4-char UCI notation) to `game` and returns its PGN
-// fragment, formatted exactly like the live bestmove handler so opening and search moves
-// share one continuous, correctly-numbered move string.
+// Applies one legal move (UCI notation) to `game` and returns its PGN fragment. Opening and
+// engine moves both go through here, so they share one continuous, correctly-numbered move string.
 fn apply_move_for_pgn(game: &mut UciGame, uci_move: &str) -> String {
     game.do_move(uci_move);
-    let turn = NotationUtil::get_turn_from_notation(uci_move);
-    let long_algebraic = if turn.promotion != 0 {
-        format!("{}{}", &uci_move[0..4], "=Q")
-    } else {
-        NotationUtil::get_long_algebraic(&uci_move[0..4], &game.board)
-    };
+    let long_algebraic = NotationUtil::get_long_algebraic(uci_move, &game.board);
     let move_number = if game.pty % 2 == 1 { format!("{}. ", game.pty / 2 + 1) } else { format!("") };
     format!(" {}{}", move_number, long_algebraic)
+}
+
+// Checks an engine's `bestmove` line against the legal moves of the side to move and plays it.
+// Returns the move's PGN fragment, or why the move was rejected - the sender then loses the game.
+fn apply_engine_move(game: &mut UciGame, legal_moves: &[Turn], msg: &str, sender_white: bool) -> Result<String, String> {
+    // "bestmove e2e4", possibly followed by "ponder e7e5"
+    let uci_move = msg.split_whitespace().nth(1).ok_or_else(|| "no move after bestmove".to_string())?;
+    if sender_white != game.board.white_to_move {
+        return Err(format!("'{}' sent while the other side is to move", uci_move));
+    }
+    if NotationUtil::try_turn_from_notation(uci_move).is_none() {
+        return Err(format!("'{}' is not a readable UCI move", uci_move));
+    }
+    if NotationUtil::find_turn_in_list(legal_moves, uci_move).is_none() {
+        return Err(format!("'{}' is not a legal move", uci_move));
+    }
+    Ok(apply_move_for_pgn(game, uci_move))
 }
 
 fn parse_option(opt: &str) -> Option<(String, String)> {
@@ -406,6 +424,114 @@ mod tests {
         assert_eq!(parse_option("="), None);
         assert_eq!(parse_option(""), None);
     }
+
+    #[test]
+    fn test_underpromotion_puts_the_chosen_piece_on_the_board_and_in_the_pgn() {
+        let service = Service::new();
+        // (side to move, move, target square, piece expected there)
+        for (side, uci_move, target, piece) in [
+            ("w", "b7b8q", 22, 14), ("w", "b7b8r", 22, 11), ("w", "b7b8b", 22, 13), ("w", "b7b8n", 22, 12),
+            ("w", "b7a8r", 21, 11),
+            ("b", "b2b1q", 92, 24), ("b", "b2b1r", 92, 21), ("b", "b2b1b", 92, 23), ("b", "b2b1n", 92, 22),
+            ("b", "b2a1b", 91, 23),
+        ] {
+            let mut game = UciGame::new(service.fen.set_fen(&format!("r6k/1P6/8/8/8/8/1p6/R6K {} - - 0 1", side)));
+            let fragment = apply_move_for_pgn(&mut game, uci_move);
+            assert_eq!(game.board.field[target], piece, "{}", uci_move);
+            let letter = uci_move[4..5].to_uppercase();
+            assert_eq!(fragment, format!(" 1. {}={}", &uci_move[0..4], letter), "{}", uci_move);
+        }
+    }
+
+    #[test]
+    fn test_pgn_writes_the_promotion_piece() {
+        let mut pgn = Pgn::new(String::new(), String::new(), String::new(), String::new(), String::new(),
+            String::new(), String::new(), String::new(), String::new(), String::new());
+        pgn.set_moves(" 1. b7b8=R b2a1=N".to_string());
+        assert_eq!(pgn.moves, "1. b8=R bxa1=N");
+    }
+
+    // Round robin 2026-10-12, game started 18:46:39: SleepMind (White) against suprah-0.46.2.
+    // SleepMind played h7h8r; Matt-Magie 1.4.5 made it a queen, so its board drifted from the
+    // engines' and, after b5a4, that queen "captured" the king -> panic, no PGN.
+    const RR_2026_10_12_CRASH_GAME: &str = "c2c4 b7b6 b1c3 e7e6 d2d4 c8b7 d1c2 f8b4 e2e4 d8h4 \
+        f1d3 b4c3 b2c3 f7f5 g2g3 h4h5 f2f3 g8e7 e4f5 e6f5 c1f4 d7d6 c2e2 e8g8 e2e6 f8f7 e1c1 g7g5 \
+        f4d2 g5g4 g1e2 g4f3 e2f4 h5g4 h2h3 g4g5 f4d5 b7d5 e6f7 g8f7 d2g5 d5e4 g5e7 f7e7 d3e4 f5e4 \
+        h1e1 d6d5 c4d5 e7d6 e1e4 d6d5 e4e8 c7c5 d1f1 c5d4 f1f3 d5c4 c3d4 c4d4 f3f8 a7a5 e8b8 a8a7 \
+        b8b6 a5a4 c1d2 d4e5 d2e3 a7c7 f8e8 e5d5 b6a6 c7c3 e3f4 c3c4 f4f3 c4b4 a6a5 d5d6 e8e4 b4b7 \
+        a5a4 b7f7 e4f4 f7b7 h3h4 d6c5 a4a6 b7b1 a6h6 b1f1 f3g4 f1d1 h6h7 c5b6 h4h5 b6a5 g4g5 a5b6 \
+        g3g4 d1d5 f4f5 d5d8 f5f6 b6c5 h5h6 d8g8 h7g7 g8a8 h6h7 c5b4 g7g8 a8a2 h7h8r b4b3 g8c8 a2a5 \
+        g5g6 a5b5 h8h3 b3b4 f6f4 b4a5 f4f5 b5f5 g6f5 a5b4 g4g5 b4b5 h3b3 b5a4";
+
+    #[test]
+    fn test_round_robin_underpromotion_game_replays() {
+        let service = Service::new();
+        let mut game = UciGame::new(service.fen.set_init_board());
+        let mut legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+        let moves: Vec<&str> = RR_2026_10_12_CRASH_GAME.split_whitespace().collect();
+        assert_eq!(moves.len(), 132);
+        for uci_move in moves {
+            let white = game.board.white_to_move;
+            let result = apply_engine_move(&mut game, &legal_moves, &format!("bestmove {}", uci_move), white);
+            assert!(result.is_ok(), "{} after {}: {:?}", uci_move, game.made_moves_str, result);
+            if uci_move == "h7h8r" {
+                assert_eq!(game.board.field[28], 11, "h8 must hold a white rook");
+            }
+            legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+        }
+        assert_eq!(game.board.game_status, GameStatus::Normal);
+        assert!(!legal_moves.is_empty());
+    }
+
+    #[test]
+    fn test_engine_move_is_checked_against_the_legal_moves() {
+        let service = Service::new();
+        // Start position, White to move. (message, sent by White, accepted)
+        for (msg, white, accepted) in [
+            ("bestmove e2e4", true, true),
+            ("bestmove g1f3 ponder g8f6", true, true),
+            ("bestmove e2e5", true, false),     // illegal
+            ("bestmove xyz", true, false),      // unreadable
+            ("bestmove 0000", true, false),
+            ("bestmove (none)", true, false),
+            ("bestmove", true, false),          // no move at all
+            ("bestmove E2E4", true, false),     // UCI moves are lower case
+            ("bestmove e2e4q", true, false),    // promotion letter on a move to the 4th rank
+            ("bestmove e7e5", false, false),    // Black moves while White is to move
+            ("bestmove e2e4", false, false),    // White's move, sent by Black
+        ] {
+            let mut game = UciGame::new(service.fen.set_init_board());
+            let legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+            let result = apply_engine_move(&mut game, &legal_moves, msg, white);
+            assert_eq!(result.is_ok(), accepted, "'{}' from {}: {:?}", msg, if white { "White" } else { "Black" }, result);
+            if !accepted {
+                assert_eq!(game.pty, 0, "a rejected move must leave the game untouched: {}", msg);
+                assert!(game.made_moves_str.is_empty(), "{}", msg);
+            }
+        }
+
+        let mut game = UciGame::new(service.fen.set_init_board());
+        let legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+        assert_eq!(apply_engine_move(&mut game, &legal_moves, "bestmove g1f3 ponder g8f6", true), Ok(" 1. Ng1f3".to_string()));
+        assert_eq!(game.made_moves_str, "g1f3");
+    }
+
+    #[test]
+    fn test_promotion_needs_its_piece_letter() {
+        let service = Service::new();
+        for (side, msg, accepted) in [
+            ("w", "bestmove b7b8", false),
+            ("w", "bestmove b7b8k", false),
+            ("w", "bestmove b7b8r", true),
+            ("b", "bestmove b2a1", false),
+            ("b", "bestmove b2a1b", true),
+        ] {
+            let mut game = UciGame::new(service.fen.set_fen(&format!("r6k/1P6/8/8/8/8/1p6/R6K {} - - 0 1", side)));
+            let legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+            let result = apply_engine_move(&mut game, &legal_moves, msg, side == "w");
+            assert_eq!(result.is_ok(), accepted, "{}: {:?}", msg, result);
+        }
+    }
 }
 
 
@@ -425,8 +551,8 @@ fn check_game_over(board: &mut Board,
 
         let state = board.game_status.clone();
         let result = match state {
-            GameStatus::WhiteWin | GameStatus::WhiteWinByTime => "1-0",
-            GameStatus::BlackWin | GameStatus::BlackWinByTime => "0-1",
+            GameStatus::WhiteWin | GameStatus::WhiteWinByTime | GameStatus::WhiteWinByIllegalMove => "1-0",
+            GameStatus::BlackWin | GameStatus::BlackWinByTime | GameStatus::BlackWinByIllegalMove => "0-1",
             _ => "1/2-1/2",
         };
         pgn.set_termination(&format!("{:?}", state));
