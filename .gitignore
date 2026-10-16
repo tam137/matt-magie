@@ -10,3 +10,13 @@ src/.vscode/launch.json
 .idea/
 Cargo.lock
 buildVersions/
+engines/
+mattmagie.log
+games.pgn
+.mattmagie.log.swp
+mattmagie.log.backup
+pgns/
+test_tournament.pgn
+*pgn
+*log
+games.pgn.backup

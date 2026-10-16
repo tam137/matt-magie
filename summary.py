@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+import sys
+import re
+import argparse
+from collections import defaultdict
+
+def parse_pgn(file_path):
+    games = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}")
+        return games
+    
+    # Split the content by [Event " to isolate each game block
+    game_blocks = re.split(r'(?=\[Event\s+)', content)
+    for block in game_blocks:
+        if not block.strip():
+            continue
+        tags = {}
+        for line in block.split('\n'):
+            line = line.strip()
+            match = re.match(r'\[(\w+)\s+"([^"]*)"\]', line)
+            if match:
+                tags[match.group(1)] = match.group(2)
+        if 'White' in tags and 'Black' in tags and 'Result' in tags:
+            games.append(tags)
+    return games
+
+import math
+
+def compute_ratings_and_scores(games, iterations=100):
+    stats = defaultdict(lambda: {
+        'games': 0,
+        'wins': 0,
+        'draws': 0,
+        'losses': 0,
+        'points': 0.0
+    })
+    
+    w_matrix = defaultdict(lambda: defaultdict(float))
+    n_matrix = defaultdict(lambda: defaultdict(int))
+    
+    for game in games:
+        w = game['White'].strip()
+        b = game['Black'].strip()
+        res = game['Result'].strip()
+        
+        if res not in ("1-0", "0-1", "1/2-1/2"):
+            continue
+            
+        stats[w]['games'] += 1
+        stats[b]['games'] += 1
+        n_matrix[w][b] += 1
+        n_matrix[b][w] += 1
+        
+        if res == "1-0":
+            stats[w]['wins'] += 1
+            stats[b]['losses'] += 1
+            stats[w]['points'] += 1.0
+            w_matrix[w][b] += 1.0
+            w_matrix[b][w] += 0.0
+        elif res == "0-1":
+            stats[w]['losses'] += 1
+            stats[b]['wins'] += 1
+            stats[b]['points'] += 1.0
+            w_matrix[w][b] += 0.0
+            w_matrix[b][w] += 1.0
+        else: # "1/2-1/2"
+            stats[w]['draws'] += 1
+            stats[b]['draws'] += 1
+            stats[w]['points'] += 0.5
+            stats[b]['points'] += 0.5
+            w_matrix[w][b] += 0.5
+            w_matrix[b][w] += 0.5
+
+    # Bradley-Terry iterative model
+    engines = list(stats.keys())
+    gamma = {e: 1.0 for e in engines}
+    
+    for _ in range(iterations):
+        new_gamma = {}
+        for i in engines:
+            # Add virtual draws: 1 point out of 2 games against phantom player with gamma=1.0
+            W_i = stats[i]['points'] + 1.0
+            denominator = 2.0 / (gamma[i] + 1.0)
+            
+            for j in engines:
+                if i != j and n_matrix[i][j] > 0:
+                    denominator += n_matrix[i][j] / (gamma[i] + gamma[j])
+                    
+            new_gamma[i] = W_i / denominator if denominator > 0 else 1.0
+            
+        gamma = new_gamma
+
+    ratings = {}
+    for i in engines:
+        ratings[i] = 400.0 * math.log10(gamma[i]) if gamma[i] > 0 else -1000.0
+
+    if ratings:
+        avg_elo = sum(ratings.values()) / len(ratings)
+        shift = 2000.0 - avg_elo
+        for i in engines:
+            ratings[i] += shift
+            
+    return stats, ratings
+
+import subprocess
+import os
+
+def get_tournament_progress_info(games):
+    total_games = None
+    batch_played_games = 0
+    
+    if games:
+        last_game = games[-1]
+        round_tag = last_game.get('Round', '')
+        if '/' in round_tag:
+            parts = round_tag.split('/')
+            if len(parts) == 2 and parts[1].isdigit():
+                total_games = int(parts[1])
+                target_denom = parts[1]
+                for g in reversed(games):
+                    r_tag = g.get('Round', '')
+                    if '/' in r_tag and r_tag.split('/')[-1] == target_denom:
+                        batch_played_games += 1
+                    else:
+                        break
+
+    played_games = batch_played_games if (total_games is not None and batch_played_games > 0) else len(games)
+    
+    is_running = False
+    try:
+        res = subprocess.run(['pgrep', '-f', 'Matt-Magie|mm.sh'], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            my_pid = str(os.getpid())
+            pids = [p.strip() for p in res.stdout.strip().split('\n') if p.strip() and p.strip() != my_pid]
+            if pids:
+                is_running = True
+    except Exception:
+        pass
+        
+    if is_running:
+        status_str = "🟢 RUNNING"
+    elif total_games is not None and played_games >= total_games:
+        status_str = "🏁 FINISHED"
+    elif total_games is not None and played_games < total_games:
+        status_str = "⏸️ PAUSED / INTERRUPTED"
+    else:
+        status_str = "🏁 FINISHED"
+
+    if total_games is not None and total_games > 0:
+        pct = (played_games / total_games) * 100.0
+        progress_str = f"Progress: {played_games} / {total_games} games played ({pct:.1f}%) | Status: {status_str}"
+    else:
+        progress_str = f"Progress: {played_games} games played | Status: {status_str}"
+        
+    return progress_str
+
+def main():
+    parser = argparse.ArgumentParser(description="Matt-Magie PGN Summary & Statistics Generator")
+    parser.add_argument("pgn_file", help="Path to the PGN file to analyze")
+    parser.add_argument("-g", "--games", action="store_true", help="Display the list of individual game results")
+    parser.add_argument("--gauntlet", help="Name of the challenger engine in Gauntlet mode")
+    parser.add_argument("-i", "--iterations", type=int, default=100, help="Number of iterations for iterative Elo calculation (default: 100)")
+    
+    if len(sys.argv) < 2:
+        parser.print_help()
+        sys.exit(1)
+        
+    args = parser.parse_args()
+    pgn_file = args.pgn_file
+    gauntlet_challenger = args.gauntlet
+    show_games = args.games
+
+    games = parse_pgn(pgn_file)
+    
+    if not games:
+        print(f"No games found in {pgn_file}.")
+        sys.exit(0)
+        
+    try:
+        games.sort(key=lambda g: int(g.get('Round', '0').split('/')[0]) if g.get('Round', '0').split('/')[0].isdigit() else 0)
+    except Exception:
+        pass
+        
+    progress_str = get_tournament_progress_info(games)
+
+    # Print individual results only if requested
+    if show_games:
+        print("=" * 73)
+        print(" " * 23 + "INDIVIDUAL GAME RESULTS")
+        print("=" * 73)
+        for i, game in enumerate(games, 1):
+            w = game['White']
+            b = game['Black']
+            res = game['Result']
+            w_disp = (w[:23] + "..") if len(w) > 25 else w
+            b_disp = (b[:23] + "..") if len(b) > 25 else b
+            print(f"Game {i:<2}: {w_disp:<25} vs {b_disp:<25}  -> {res}")
+        print()
+        
+    if gauntlet_challenger:
+        # Resolve challenger name to what's in the PGN file
+        engine_counts = defaultdict(int)
+        for game in games:
+            engine_counts[game['White'].strip()] += 1
+            engine_counts[game['Black'].strip()] += 1
+            
+        detected_challenger = max(engine_counts, key=engine_counts.get) if engine_counts else gauntlet_challenger
+        
+        # Check if the passed name exists exactly
+        if gauntlet_challenger.strip() not in engine_counts:
+            # Try fuzzy matching (substring or common numbers like version digits)
+            matched = None
+            # Extract digits/version numbers e.g. "0.9.3" from "suprah-0.9.3"
+            version_match = re.search(r'\d+\.\d+\.\d+', gauntlet_challenger)
+            version_str = version_match.group(0) if version_match else None
+            
+            for eng in engine_counts:
+                if version_str and version_str in eng:
+                    matched = eng
+                    break
+                # Try simple clean alphanumeric match
+                eng_clean = re.sub(r'[^a-zA-Z0-9]', '', eng.lower())
+                target_clean = re.sub(r'[^a-zA-Z0-9]', '', gauntlet_challenger.lower())
+                if target_clean in eng_clean or eng_clean in target_clean:
+                    matched = eng
+                    break
+            
+            if matched:
+                gauntlet_challenger = matched
+            else:
+                gauntlet_challenger = detected_challenger
+                
+        print("=" * 73)
+        print(" " * 20 + "GAUNTLET HEAD-TO-HEAD SUMMARY")
+        print("=" * 73)
+        print(f" {progress_str}")
+        print("-" * 73)
+        print(f"Challenger: {gauntlet_challenger}")
+        print("-" * 73)
+        
+        total_wins = 0
+        total_draws = 0
+        total_losses = 0
+        h2h = defaultdict(lambda: {'wins': 0, 'draws': 0, 'losses': 0})
+        
+        for game in games:
+            w = game['White'].strip()
+            b = game['Black'].strip()
+            res = game['Result'].strip()
+            if res not in ("1-0", "0-1", "1/2-1/2"):
+                continue
+                
+            if w == gauntlet_challenger:
+                opp = b
+                if res == "1-0":
+                    h2h[opp]['wins'] += 1
+                    total_wins += 1
+                elif res == "0-1":
+                    h2h[opp]['losses'] += 1
+                    total_losses += 1
+                else:
+                    h2h[opp]['draws'] += 1
+                    total_draws += 1
+            elif b == gauntlet_challenger:
+                opp = w
+                if res == "0-1":
+                    h2h[opp]['wins'] += 1
+                    total_wins += 1
+                elif res == "1-0":
+                    h2h[opp]['losses'] += 1
+                    total_losses += 1
+                else:
+                    h2h[opp]['draws'] += 1
+                    total_draws += 1
+                    
+        for opp, st in sorted(h2h.items()):
+            w_d_l = f"{st['wins']}/{st['draws']}/{st['losses']}"
+            opp_disp = (opp[:30] + "..") if len(opp) > 32 else opp
+            print(f"vs {opp_disp:<32} {w_d_l:<9}")
+            
+        print("-" * 73)
+        total_wdl = f"{total_wins}/{total_draws}/{total_losses}"
+        print(f"{'TOTAL (W/D/L):':<35} {total_wdl:<9}")
+        print("=" * 73)
+        return
+
+    stats, ratings = compute_ratings_and_scores(games, iterations=args.iterations)
+    
+    # Sort engines by Elo descending, then by points descending
+    sorted_engines = sorted(
+        stats.keys(),
+        key=lambda e: (ratings[e], stats[e]['points']),
+        reverse=True
+    )
+    
+    # Print tournament scoreboard & ELO evaluation beautifully
+    print("=" * 73)
+    print(" " * 17 + "TOURNAMENT SCOREBOARD & ELO EVALUATION")
+    print("=" * 73)
+    print(f" {progress_str}")
+    print("-" * 73)
+    print(f"{'Rank':<4} {'Engine Name':<25} {'Games':<6} {'W/D/L':<13} {'Points':<8} {'Score%':<7} {'Elo':<5}")
+    print("-" * 73)
+    
+    for rank, engine in enumerate(sorted_engines, 1):
+        estats = stats[engine]
+        games_played = estats['games']
+        w_d_l = f"{estats['wins']}/{estats['draws']}/{estats['losses']}"
+        pts = estats['points']
+        pct = (pts / games_played * 100.0) if games_played > 0 else 0.0
+        elo = round(ratings[engine])
+        engine_disp = (engine[:23] + "..") if len(engine) > 25 else engine
+        
+        print(f"{rank:<4} {engine_disp:<25} {games_played:<6} {w_d_l:<13} {pts:<8.1f} {pct:<7.1f} {elo:<5}")
+        
+    print("=" * 73)
+    print("Note: Elo calculates via iterative Bradley-Terry, normalized to 2000 avg.")
+    print("=" * 73)
+
+if __name__ == '__main__':
+    main()
+

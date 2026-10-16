@@ -292,8 +292,9 @@ execute_tournament_games() {
     IFS=',' read -r -a engines <<< "$engines_str"
     IFS="$OLD_IFS"
 
-    # Load opening lines (space-separated UCI moves, one per line), if given. Matt-Magie
-    # plays one line per colour-swapped round, cycling once the pool is exhausted.
+    # Load opening lines (space-separated UCI moves, one per line), if given. Both games of a
+    # colour-swapped pair start from the same line, so the opening cancels out of the comparison;
+    # every pair takes the next line, cycling once the pool is exhausted.
     local -a opening_lines=()
     if [[ -n "$openings_file" ]]; then
         if [[ -f "$openings_file" ]]; then
@@ -308,6 +309,7 @@ execute_tournament_games() {
         fi
     fi
     local num_openings=${#opening_lines[@]}
+    local pair_idx=0
 
     local num_engines=${#engines[@]}
     local match_pairs=0
@@ -355,10 +357,6 @@ execute_tournament_games() {
     local game_num=1
     if [[ "$concurrency" -le 1 ]]; then
         for ((r=0; r<rounds; r++)); do
-            local opening=""
-            if [[ "$num_openings" -gt 0 ]]; then
-                opening="${opening_lines[$((r % num_openings))]}"
-            fi
             if [[ "$tournament_mode" == "gauntlet" ]]; then
                 local challenger_name="${engines[0]}"
                 for ((j=1; j<num_engines; j++)); do
@@ -366,6 +364,8 @@ execute_tournament_games() {
                     local e1="engines/$challenger_name"
                     local e2="engines/$opp_name"
 
+                    local opening=""
+                    [[ "$num_openings" -gt 0 ]] && opening="${opening_lines[$((pair_idx % num_openings))]}"
                     echo -e "${YELLOW}=== Game $game_num/$total_games: $challenger_name (White) vs $opp_name (Black) ===${NC}"
                     $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                     tail -n 12 "$pgn"
@@ -374,6 +374,7 @@ execute_tournament_games() {
 
                     echo -e "${YELLOW}=== Game $game_num/$total_games: $opp_name (White) vs $challenger_name (Black) (Colors swapped) ===${NC}"
                     $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
+                    pair_idx=$((pair_idx+1))
                     tail -n 12 "$pgn"
                     echo ""
                     game_num=$((game_num+1))
@@ -388,6 +389,8 @@ execute_tournament_games() {
                         local e1="engines/$e1_name"
                         local e2="engines/$e2_name"
 
+                        local opening=""
+                        [[ "$num_openings" -gt 0 ]] && opening="${opening_lines[$((pair_idx % num_openings))]}"
                         echo -e "${YELLOW}=== Game $game_num/$total_games: $e1_name (White) vs $e2_name (Black) ===${NC}"
                         $MM_EXEC "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
                         tail -n 12 "$pgn"
@@ -396,6 +399,7 @@ execute_tournament_games() {
 
                         echo -e "${YELLOW}=== Game $game_num/$total_games: $e2_name (White) vs $e1_name (Black) (Colors swapped) ===${NC}"
                         $MM_EXEC "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num/$total_games" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$engine_options" "$opening"
+                        pair_idx=$((pair_idx+1))
                         tail -n 12 "$pgn"
                         echo ""
                         game_num=$((game_num+1))
@@ -407,10 +411,6 @@ execute_tournament_games() {
         done
     else
         for ((r=0; r<rounds; r++)); do
-            local opening=""
-            if [[ "$num_openings" -gt 0 ]]; then
-                opening="${opening_lines[$((r % num_openings))]}"
-            fi
             if [[ "$tournament_mode" == "gauntlet" ]]; then
                 local challenger_name="${engines[0]}"
                 for ((j=1; j<num_engines; j++)); do
@@ -421,6 +421,8 @@ execute_tournament_games() {
                     while [ "$(jobs -rp | wc -l)" -ge "$concurrency" ]; do
                         wait -n
                     done
+                    local opening=""
+                    [[ "$num_openings" -gt 0 ]] && opening="${opening_lines[$((pair_idx % num_openings))]}"
                     run_single_game_job "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$total_games" "$challenger_name" "$opp_name" "$opening" &
                     game_num=$((game_num+1))
 
@@ -428,6 +430,7 @@ execute_tournament_games() {
                         wait -n
                     done
                     run_single_game_job "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$total_games" "$opp_name" "$challenger_name" "$opening" &
+                    pair_idx=$((pair_idx+1))
                     game_num=$((game_num+1))
                 done
             else
@@ -441,6 +444,8 @@ execute_tournament_games() {
                         while [ "$(jobs -rp | wc -l)" -ge "$concurrency" ]; do
                             wait -n
                         done
+                        local opening=""
+                        [[ "$num_openings" -gt 0 ]] && opening="${opening_lines[$((pair_idx % num_openings))]}"
                         run_single_game_job "$e1" "$e2" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$total_games" "$e1_name" "$e2_name" "$opening" &
                         game_num=$((game_num+1))
 
@@ -448,6 +453,7 @@ execute_tournament_games() {
                             wait -n
                         done
                         run_single_game_job "$e2" "$e1" "$logfile" "$pgn" "$event" "$site" "$game_num" "$time_control" "$time_inc" "$logging" "$debuging" "$engine_options" "$total_games" "$e2_name" "$e1_name" "$opening" &
+                        pair_idx=$((pair_idx+1))
                         game_num=$((game_num+1))
                     done
                 done

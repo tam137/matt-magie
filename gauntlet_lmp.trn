@@ -1,0 +1,11 @@
+# Does bad-capture pruning earn its place next to LMP, and does the pair survive
+# a cross-version comparison? Challenger first.
+engines = ab-both, ab-lmp, suprah-0.34.0, suprah-0.33.1
+time_control = 1000
+increment = 100
+rounds = 800
+pgn = gauntlet_lmp.pgn
+engine_options = OwnBook=false, Hash=64, Threads=1
+concurrency = 9
+openings = openings_mixed.txt
+mode = gauntlet

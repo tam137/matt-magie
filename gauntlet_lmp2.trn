@@ -1,0 +1,26 @@
+# Continuation of gauntlet_lmp, under a sequential stopping rule.
+#
+# The fixed-length run resolves about +/-12.5 Elo per pairing at 1600 games, and the open
+# question - both minus lmp - was estimated at +13.2. If it comes back undecided, this adds
+# games until the SPRT decides instead of guessing a new fixed length.
+#
+# It writes a SEPARATE pgn on purpose. Matt-Magie numbers games 1..N per run, and appending a
+# second run to the same file would let the last game of one pair with the first of the other.
+# scripts/sprt.py keys pairs by file, so both PGNs can be read together:
+#
+#   scripts/run_sprt_match.sh gauntlet_lmp2.trn BOTH LMP --elo0 -10 --elo1 0
+#   python3 scripts/sprt.py ../matt-magie/gauntlet_lmp.pgn ../matt-magie/gauntlet_lmp2.pgn \
+#       --engines BOTH LMP --elo0 -10 --elo1 0
+# round_robin, not gauntlet: in gauntlet mode only the challenger plays everyone, so the first
+# run never pairs ab-lmp with suprah-0.34.0 and the cross-version check task.md requires for the
+# LMP-only configuration is missing from it. Three engines round robin is three pairings for the
+# same games per pairing.
+engines = ab-both, ab-lmp, suprah-0.34.0
+time_control = 1000
+increment = 100
+rounds = 1500
+pgn = gauntlet_lmp2.pgn
+engine_options = OwnBook=false, Hash=64, Threads=1
+concurrency = 9
+openings = openings_mixed.txt
+mode = round_robin

@@ -1,6 +1,6 @@
 use crate::model::Board;
 use std::collections::HashMap;
-use rand::{Rng, rngs::StdRng, SeedableRng};
+use rand::{RngExt, rngs::StdRng, SeedableRng};
 
 
 const BOARD_SIZE: usize = 120;

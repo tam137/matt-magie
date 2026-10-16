@@ -60,8 +60,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(opts) if !opts.is_empty() => opts.clone(),
         _ => engine_0_options.clone(),
     };
-    // Space-separated UCI moves (e.g. "e2e4 c7c5 g1f3 ..."), always an even count so White
-    // is on move at handover. Empty when no opening line was supplied.
+    // Space-separated UCI moves (e.g. "e2e4 c7c5 g1f3 ..."). After an odd count Black is on move
+    // at handover. Empty when no opening line was supplied.
     let opening_moves_str: String = args.get(14).cloned().unwrap_or_default();
     let opening_moves: Vec<&str> = opening_moves_str.split_whitespace().collect();
 
@@ -223,8 +223,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if game_status == 2 {
             // all Engines ready for new game
-            send(&mut engine_process_0, &format!("go wtime {} btime {}", remaining_time_white, remaining_time_black), &logfile);
-            tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
+            let go_cmd = format!("go wtime {} winc {} btime {} binc {}",
+                remaining_time_white, inc_per_move_in_ms, remaining_time_black, inc_per_move_in_ms);
+            if game.board.white_to_move {
+                send(&mut engine_process_0, &go_cmd, &logfile);
+                tx_clock.send(TimeControl::WhiteToMove).expect("MM could not send time data");
+            } else {
+                send(&mut engine_process_1, &go_cmd, &logfile);
+                tx_clock.send(TimeControl::BlackToMove).expect("MM could not send time data");
+            }
             game_status += 1;
         }
 
@@ -285,7 +292,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     "readyok" => {
                         send(current_engine_process, "ucinewgame", &logfile);
-                        if white && !opening_moves_str.is_empty() {
+                        if white == game.board.white_to_move && !opening_moves_str.is_empty() {
                             send(current_engine_process, &format!("position startpos moves {}", opening_moves_str), &logfile);
                         }
                         game_status += 1;
