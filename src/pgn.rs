@@ -113,7 +113,7 @@ impl Pgn {
     }
 
     pub fn save(&self) {
-        let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[Termination \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{} {}\n\n",
+        let content = format!("[Event \"{}\"]\n[Site \"{}\"]\n[Date \"{}\"]\n[Round \"{}\"]\n[White \"{}\"]\n[Black \"{}\"]\n[Result \"{}\"]\n[Termination \"{}\"]\n[PlyCount \"{}\"]\n[TimeControl \"{}\"]\n[Time \"{}\"]\n{} {}\n\n",
         self.event,
         self.site,
         self.date,
@@ -122,6 +122,7 @@ impl Pgn {
         self.black,
         self.result,
         self.termination,
+        self.ply_count,
         self.time_control,
         self.time,
         self.moves,        

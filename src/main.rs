@@ -21,7 +21,6 @@ use std::process::Child;
 use chrono::{Local, Datelike, Timelike};
 use model::UciGame;
 use model::GameStatus;
-use model::Board;
 use model::Turn;
 
 use crate::log::log;
@@ -235,7 +234,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             game_status += 1;
         }
 
-        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
+        if check_game_over(&mut game, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
             log(&format!("white_time {} winc {} black_time {} binc {}",
                 remaining_time_white,
                 inc_per_move_in_ms,
@@ -318,7 +317,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     legal.join(" ")),
                                     &logfile);
                                 game.board.game_status = if white { GameStatus::BlackWinByIllegalMove } else { GameStatus::WhiteWinByIllegalMove };
-                                check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service);
+                                check_game_over(&mut game, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service);
                                 break;
                             }
                         }
@@ -329,13 +328,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             log("found no moves", &logfile);
                         }
 
-                        let all_moves_str = game.made_moves_str.as_str();
-                
-                        if check_game_over(&mut game.board, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
+                        if check_game_over(&mut game, &tx_clock, &logfile, &mut pgn, &all_moves_long_algebraic, &service) {
                             break;
                         }              
 
-                        let all_moves = format!("position startpos moves {}", all_moves_str);
+                        let all_moves = format!("position startpos moves {}", game.made_moves_str);
                         send(other_engine_process, &all_moves, &logfile);
 
                         // inc_per_move_in_ms
@@ -421,6 +418,131 @@ fn parse_option(opt: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Plays `moves` through the same check as engine moves, the legal moves regenerated after each.
+    fn play(service: &Service, game: &mut UciGame, moves: &str) {
+        for uci_move in moves.split_whitespace() {
+            let legal_moves = service.move_gen.generate_valid_moves_list(&mut game.board);
+            let white = game.board.white_to_move;
+            let result = apply_engine_move(game, &legal_moves, &format!("bestmove {}", uci_move), white);
+            assert!(result.is_ok(), "{}: {:?}", uci_move, result);
+        }
+        service.move_gen.generate_valid_moves_list(&mut game.board);
+    }
+
+    use crate::model::MOVE_LIMIT;
+
+    fn game_from(service: &Service, fen: &str) -> UciGame {
+        UciGame::new(service.fen.set_fen(fen))
+    }
+
+    #[test]
+    fn test_halfmove_clock_counts_quiet_moves_and_resets_on_pawn_moves_and_captures() {
+        let service = Service::new();
+        let mut game = UciGame::new(service.fen.set_init_board());
+        play(&service, &mut game, "g1f3 g8f6 b1c3");
+        assert_eq!(game.halfmove_clock, 3);
+        play(&service, &mut game, "e7e5");                 // black pawn move
+        assert_eq!(game.halfmove_clock, 0);
+        play(&service, &mut game, "f3e5");                 // capture
+        assert_eq!(game.halfmove_clock, 0);
+        play(&service, &mut game, "f8c5 e2e3");            // white pawn move
+        assert_eq!(game.halfmove_clock, 0);
+        play(&service, &mut game, "e8g8 f1e2 b8c6 e1g1");  // castling is quiet
+        assert_eq!(game.halfmove_clock, 4);
+        // en passant
+        let mut game = game_from(&service, "4k3/8/8/8/3p4/8/4P3/4K3 w - - 0 1");
+        play(&service, &mut game, "e1d1 e8d8 d1e1 d8e8");
+        assert_eq!(game.halfmove_clock, 4);
+        play(&service, &mut game, "e2e4 d4e3");
+        assert_eq!(game.halfmove_clock, 0);
+    }
+
+    #[test]
+    fn test_fifty_move_rule_draws_at_a_hundred_quiet_plies() {
+        let service = Service::new();
+        let mut game = game_from(&service, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1");
+        game.halfmove_clock = 98;
+        play(&service, &mut game, "a1a2");
+        game.apply_draw_rules();
+        assert_eq!(game.halfmove_clock, 99);
+        assert_eq!(game.board.game_status, GameStatus::Normal);
+        play(&service, &mut game, "e8d8");
+        game.apply_draw_rules();
+        assert_eq!(game.board.game_status, GameStatus::DrawByFiftyMoves);
+    }
+
+    #[test]
+    fn test_mate_on_the_hundredth_ply_is_a_win() {
+        let service = Service::new();
+        let mut game = game_from(&service, "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1");
+        game.halfmove_clock = 99;
+        play(&service, &mut game, "a1a8");
+        game.apply_draw_rules();
+        assert_eq!(game.halfmove_clock, 100);
+        assert_eq!(game.board.game_status, GameStatus::WhiteWin);
+    }
+
+    #[test]
+    fn test_insufficient_material_draws_only_dead_positions() {
+        let service = Service::new();
+        for (fen, dead) in [
+            ("8/8/8/4k3/8/8/8/4K3 w - - 0 1", true),        // K v K
+            ("8/8/8/4k3/8/8/8/2B1K3 w - - 0 1", true),      // KB v K
+            ("8/8/8/4k3/8/8/8/1N2K3 b - - 0 1", true),      // KN v K
+            ("8/8/8/4k3/8/2b5/8/2B1K3 w - - 0 1", true),    // bishops c3 and c1, both dark
+            ("8/8/8/4k3/1b6/8/8/2B1K3 w - - 0 1", true),    // b4 and c1, both dark
+            ("8/8/8/4k3/8/3b4/8/2B1K3 w - - 0 1", false),   // d3 light, c1 dark
+            ("8/8/8/4k3/8/3n4/8/2B1K3 w - - 0 1", false),   // KB v KN
+            ("8/8/8/4k3/8/3n4/8/1N2K3 w - - 0 1", false),   // KN v KN
+            ("8/8/8/4k3/8/8/8/1NN1K3 w - - 0 1", false),    // KNN v K
+            ("8/8/8/4k3/8/8/4P3/4K3 w - - 0 1", false),     // KP v K
+            ("8/8/8/4k3/8/8/8/R3K3 w - - 0 1", false),      // KR v K
+            ("8/8/8/4k3/8/8/8/Q3K3 w - - 0 1", false),      // KQ v K
+        ] {
+            let mut game = game_from(&service, fen);
+            game.apply_draw_rules();
+            let expected = if dead { GameStatus::DrawByInsufficientMaterial } else { GameStatus::Normal };
+            assert_eq!(game.board.game_status, expected, "{}", fen);
+        }
+        // a capture that leaves K v K
+        let mut game = game_from(&service, "8/8/8/8/3k4/8/3r4/3K4 w - - 0 1");
+        play(&service, &mut game, "d1d2");
+        game.apply_draw_rules();
+        assert_eq!(game.board.game_status, GameStatus::DrawByInsufficientMaterial);
+    }
+
+    #[test]
+    fn test_move_limit_draws_only_past_move_limit() {
+        let service = Service::new();
+        let mut game = UciGame::new(service.fen.set_init_board());
+        game.board.move_count = MOVE_LIMIT;
+        game.apply_draw_rules();
+        assert_eq!(game.board.game_status, GameStatus::Normal);
+        game.board.move_count = MOVE_LIMIT + 1;
+        game.apply_draw_rules();
+        assert_eq!(game.board.game_status, GameStatus::DrawByMoveLimit);
+        // move 101 is no longer the end
+        let mut game = UciGame::new(service.fen.set_init_board());
+        game.board.move_count = 101;
+        game.apply_draw_rules();
+        assert_eq!(game.board.game_status, GameStatus::Normal);
+    }
+
+    #[test]
+    fn test_pgn_writes_ply_count_and_termination() {
+        let path = std::env::temp_dir().join(format!("mm_test_{}.pgn", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut pgn = Pgn::new(String::new(), String::new(), String::new(), String::new(), String::new(),
+            String::new(), String::new(), String::new(), String::new(), path.to_string_lossy().to_string());
+        pgn.set_termination(&format!("{:?}", GameStatus::DrawByFiftyMoves));
+        pgn.set_ply_count("161".to_string());
+        pgn.set_result("1/2-1/2".to_string());
+        pgn.save();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(text.contains("[Termination \"DrawByFiftyMoves\"]\n[PlyCount \"161\"]\n"), "{}", text);
+    }
 
     #[test]
     fn test_parse_option() {
@@ -542,19 +664,18 @@ mod tests {
 }
 
 
-fn check_game_over(board: &mut Board,
+fn check_game_over(game: &mut UciGame,
     tx_clock: &mpsc::Sender<TimeControl>, logfile: &str, pgn: &mut Pgn, all_moves_long_algebraic: &str, service: &Service) -> bool {
 
-    if board.move_count > 100 {
-        board.game_status = GameStatus::Draw;
-    }
+    game.apply_draw_rules();
+    let board = &game.board;
 
     if board.game_status != GameStatus::Normal {
         log("Game status != Normal", logfile);
         tx_clock.send(TimeControl::AllStop).unwrap();
         log(&format!("{:?} {}", board.game_status, service.fen.get_fen(&board)), logfile);
         pgn.set_moves(all_moves_long_algebraic.to_string());
-        pgn.set_ply_count(format!("{}", board.move_count));
+        pgn.set_ply_count(format!("{}", game.pty));
 
         let state = board.game_status.clone();
         let result = match state {

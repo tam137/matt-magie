@@ -65,7 +65,7 @@ impl MoveGenService {
             if self.get_check_idx_list(&board.field, board.white_to_move).len() > 0 {
                 board.game_status = if board.white_to_move { GameStatus::BlackWin } else { GameStatus::WhiteWin }
             } else {
-                board.game_status = GameStatus::Draw;
+                board.game_status = GameStatus::DrawByStalemate;
             }
         }
     
@@ -517,7 +517,7 @@ mod tests {
         
         let valid_moves = service.move_gen.generate_valid_moves_list(&mut board);
         assert_eq!(valid_moves.len(), 0);
-        assert_eq!(board.game_status, GameStatus::Draw);
+        assert_eq!(board.game_status, GameStatus::DrawByStalemate);
     }
 
     #[test]
@@ -541,7 +541,7 @@ mod tests {
             board.do_move(actual_turn);
         }
 
-        assert_eq!(board.game_status, GameStatus::Draw);
+        assert_eq!(board.game_status, GameStatus::DrawByRepetition);
     }
 
     #[test]

@@ -6,7 +6,14 @@ use crate::{notation_util::NotationUtil, zobrist::ZobristTable};
 #[derive(Debug, PartialEq, Clone)]
 pub enum GameStatus {
     Normal,
-    Draw,
+    DrawByStalemate,
+    DrawByRepetition,
+    // A hundred plies without a pawn move or a capture.
+    DrawByFiftyMoves,
+    // A dead position: K v K, a king and one minor piece against a king, or bishops all on one colour.
+    DrawByInsufficientMaterial,
+    // The safety cap MOVE_LIMIT, against games that would never end.
+    DrawByMoveLimit,
     WhiteWin,
     BlackWin,
     WhiteWinByTime,
@@ -17,10 +24,15 @@ pub enum GameStatus {
 }
 
 
+// A game that reaches this move number is drawn (only against games that would never end).
+pub const MOVE_LIMIT: i32 = 400;
+
 pub struct UciGame {
     pub board: Board,
     pub made_moves_str: String,
     pub pty: i32,
+    // Plies since the last pawn move or capture, for the fifty-move rule.
+    pub halfmove_clock: i32,
 }
 
 impl UciGame {
@@ -30,11 +42,20 @@ impl UciGame {
             board,
             made_moves_str: String::from(""),
             pty: 0,
+            halfmove_clock: 0,
         }
     }
 
     pub fn do_move(&mut self, notation_move: &str) {
-        self.board.do_move(&NotationUtil::get_turn_from_notation(notation_move));
+        let turn = NotationUtil::get_turn_from_notation(notation_move);
+        let piece = self.board.field[turn.from as usize];
+        // a pawn move (en passant included) or a capture resets the fifty-move count
+        if piece == 10 || piece == 20 || self.board.field[turn.to as usize] != 0 {
+            self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock += 1;
+        }
+        self.board.do_move(&turn);
         self.pty += 1;
         
         if self.made_moves_str.is_empty() {
@@ -42,6 +63,21 @@ impl UciGame {
         } else {
             self.made_moves_str.push(' ');
             self.made_moves_str.push_str(notation_move);
+        }
+    }
+
+    /// Ends a game that is still running by the draw rules: insufficient material, then the
+    /// fifty-move rule, then the move limit. Mate, stalemate and repetition are already set by then.
+    pub fn apply_draw_rules(&mut self) {
+        if self.board.game_status != GameStatus::Normal {
+            return;
+        }
+        if self.board.is_insufficient_material() {
+            self.board.game_status = GameStatus::DrawByInsufficientMaterial;
+        } else if self.halfmove_clock >= 100 {
+            self.board.game_status = GameStatus::DrawByFiftyMoves;
+        } else if self.board.move_count > MOVE_LIMIT {
+            self.board.game_status = GameStatus::DrawByMoveLimit;
         }
     }
 
@@ -319,12 +355,28 @@ impl Board {
         // Check for 3-move repetition
         if let Some(&count) = self.move_repetition_map.get(&board_hash) {
             if count == 3 {
-                self.game_status = GameStatus::Draw;
+                self.game_status = GameStatus::DrawByRepetition;
             }
         }
         MoveInformation::new(old_castle_information, board_hash, old_field_for_en_passante)
     }
 
+
+    /// A dead position: no pawn, rook or queen, and either at most one minor piece on the board
+    /// or bishops only, all on squares of one colour.
+    pub fn is_insufficient_material(&self) -> bool {
+        let (mut minors, mut knights) = (0, 0);
+        let mut bishop_colours = [false, false];
+        for idx in 21..99 {
+            match self.field[idx] {
+                10 | 11 | 14 | 20 | 21 | 24 => return false,
+                12 | 22 => { minors += 1; knights += 1; }
+                13 | 23 => { minors += 1; bishop_colours[(idx / 10 + idx % 10) % 2] = true; }
+                _ => {}
+            }
+        }
+        minors <= 1 || (knights == 0 && !(bishop_colours[0] && bishop_colours[1]))
+    }
 
     // Undo move
     pub fn undo_move(&mut self, turn: &Turn, move_information: MoveInformation) {
