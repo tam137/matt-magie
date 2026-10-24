@@ -529,6 +529,48 @@ mod tests {
         assert_eq!(game.board.game_status, GameStatus::Normal);
     }
 
+    // Matt-Magie 1.7.0, measurement run kq62 (2026-10-24), round 83: the same placement with KQkq
+    // (ply 47) and twice with kq (plies 51, 55) was scored as a threefold repetition at ply 55.
+    const KQ62_ROUND_83: &str = "b2b3 d7d5 c1b2 c8f5 g1f3 e7e6 g2g3 g8f6 f1g2 f8e7 f3h4 f5g4 h2h3 g4h5 g3g4 \
+        f6e4 h4f3 h5g6 d2d3 e7f6 c2c3 e4g5 f3h4 e6e5 c3c4 e5e4 b1c3 d5c4 d3e4 b8c6 h4g6 h7g6 d1b1 g5e6 b3c4 \
+        d8d4 e2e3 d4c4 c3d5 c6e5 d5f6 g7f6 b2e5 f6e5 b1b7 e6f4 e3f4 c4c3 e1e2 c3c4 e2e1 c4c3 e1e2 c3c4 e2e1";
+
+    #[test]
+    fn test_repetition_needs_the_same_castling_rights() {
+        let service = Service::new();
+        let mut game = UciGame::new(service.fen.set_init_board());
+        play(&service, &mut game, KQ62_ROUND_83);
+        assert_eq!(game.pty, 55);
+        assert_eq!(game.board.game_status, GameStatus::Normal, "the KQkq position does not count");
+        // after e1e2 the position of plies 49 and 53 (all with kq) stands for the third time
+        play(&service, &mut game, "c4c3");
+        assert_eq!(game.board.game_status, GameStatus::Normal);
+        play(&service, &mut game, "e1e2");
+        assert_eq!(game.board.game_status, GameStatus::DrawByRepetition);
+    }
+
+    #[test]
+    fn test_hash_tells_castling_rights_and_a_capturable_en_passant_apart() {
+        let service = Service::new();
+        let hash = |fen: &str| service.fen.set_fen(fen).hash();
+        let base = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+        for other in ["r3k2r/8/8/8/8/8/8/R3K2R w Qkq - 0 1", "r3k2r/8/8/8/8/8/8/R3K2R w Kkq - 0 1",
+                      "r3k2r/8/8/8/8/8/8/R3K2R w KQq - 0 1", "r3k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1",
+                      "r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1"] {
+            assert_ne!(hash(base), hash(other), "{}", other);
+        }
+        // a black pawn on d4 can take e3 en passant; the same placement without that right differs
+        assert_ne!(hash("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1"), hash("4k3/8/8/8/3pP3/8/8/4K3 b - - 0 1"));
+        // a white pawn on f5 can take e6 en passant (black just played e7e5)
+        assert_ne!(hash("4k3/8/8/4pP2/8/8/8/4K3 w - e6 0 1"), hash("4k3/8/8/4pP2/8/8/8/4K3 w - - 0 1"));
+        // no pawn beside the pushed one: the en passant square changes nothing
+        assert_eq!(hash("4k3/8/8/8/4P3/8/8/4K3 b - e3 0 1"), hash("4k3/8/8/8/4P3/8/8/4K3 b - - 0 1"));
+        // a double step makes the en passant square through do_move, too
+        let mut game = game_from(&service, "4k3/8/8/8/3p4/8/4P3/4K3 w - - 0 1");
+        play(&service, &mut game, "e2e4");
+        assert_eq!(game.board.hash(), hash("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 2"));
+    }
+
     #[test]
     fn test_pgn_writes_ply_count_and_termination() {
         let path = std::env::temp_dir().join(format!("mm_test_{}.pgn", std::process::id()));

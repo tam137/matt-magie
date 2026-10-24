@@ -13,6 +13,10 @@ pub struct ZobristTable {
     table: [[u64; NUM_PIECES]; BOARD_SIZE],
     fig_map: HashMap<usize, usize>,
     white_to_move: u64,
+    // White short, white long, black short, black long.
+    castling: [u64; 4],
+    // Per file, only while a pawn can take en passant.
+    en_passant: [u64; 8],
     hash_map: HashMap<u64, i16>,
     entries: u32,
 }
@@ -45,7 +49,10 @@ impl ZobristTable {
             }
         }
         let white_to_move = rng.random();
-        Self { table, fig_map, white_to_move, hash_map: HashMap::with_capacity(1000), entries: 0 }
+        // drawn after the older keys, so those stay as they were
+        let castling = std::array::from_fn(|_| rng.random());
+        let en_passant = std::array::from_fn(|_| rng.random());
+        Self { table, fig_map, white_to_move, castling, en_passant, hash_map: HashMap::with_capacity(1000), entries: 0 }
     }
 
     pub fn gen_hash(&self, board: &Board) -> u64 {
@@ -60,7 +67,35 @@ impl ZobristTable {
                 hash ^= self.table[i][*piece_index];
             }
         }
+        // FIDE: positions with other castling rights or en passant chances are other positions
+        let rights = [board.white_possible_to_castle_short, board.white_possible_to_castle_long,
+            board.black_possible_to_castle_short, board.black_possible_to_castle_long];
+        for (key, right) in self.castling.iter().zip(rights) {
+            if right {
+                hash ^= key;
+            }
+        }
+        if let Some(file) = Self::en_passant_file(board) {
+            hash ^= self.en_passant[file];
+        }
         hash
+    }
+
+    /// The file of the en passant square when a pawn of the side to move stands beside the pawn that
+    /// just made its double step (pseudo-legal: a pin is not checked).
+    fn en_passant_file(board: &Board) -> Option<usize> {
+        let target = board.field_for_en_passante;
+        if target <= 0 {
+            return None;
+        }
+        // White's double step leaves its target on row 7 and the pawn on row 6; Black's on row 4 and row 5.
+        let (pawn, taker) = if target / 10 == 7 { (target - 10, 20) } else { (target + 10, 10) };
+        let beside = |sq: i32| board.field[sq as usize] == taker;
+        if beside(pawn - 1) || beside(pawn + 1) {
+            Some((target % 10 - 1) as usize)
+        } else {
+            None
+        }
     }
 
     pub fn get_eval_for_hash(&self, hash: &u64) -> Option<&i16> {
